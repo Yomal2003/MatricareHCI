@@ -1,10 +1,11 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
 import { ROLE_CONFIG } from "../types";
 import { WfLabel } from "./ui";
+import GlassSurface from "./GlassSurface";
 
 const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   home: "home-outline",
@@ -30,7 +31,11 @@ export default function BottomNavBar() {
   return (
     <SafeAreaView edges={["bottom"]} style={st.safeArea}>
       {wireframeMode && <WfLabel text="BOTTOM NAV" />}
-      <View
+      <GlassSurface
+        intensity={85}
+        tint="systemChromeMaterialLight"
+        borderRadius={0}
+        glassBorder={false}
         style={[
           st.container,
           wireframeMode && { borderWidth: 1, borderColor: "#999", borderStyle: "dashed" },
@@ -45,6 +50,7 @@ export default function BottomNavBar() {
             <Pressable
               key={item.key}
               onPress={() => navigate(item.screen)}
+              android_ripple={{ color: "rgba(0,0,0,0.06)", borderless: true, radius: 26 }}
               style={({ pressed }) => [st.tabButton, pressed && { opacity: 0.75 }]}
             >
               <View
@@ -74,7 +80,7 @@ export default function BottomNavBar() {
             </Pressable>
           );
         })}
-      </View>
+      </GlassSurface>
     </SafeAreaView>
   );
 }
@@ -85,23 +91,22 @@ const st = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "transparent",
     zIndex: 999,
   },
   container: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Platform.OS === "ios" ? "rgba(255, 255, 255, 0.55)" : "#E2E8F0",
     paddingVertical: 6,
     paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "space-around",
     shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: -2 },
-    elevation: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 10,
   },
   tabButton: {
     flex: 1,

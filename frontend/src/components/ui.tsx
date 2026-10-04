@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, TextInput, View, ViewStyle, TextInputProps } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, TextInput, View, ViewStyle, TextInputProps } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
@@ -61,7 +61,11 @@ export function Button({ title, onPress, icon, variant = "solid", style }: { tit
   const bg = variant === "solid" ? p.color : variant === "soft" ? p.colorLight : "transparent";
   const fg = variant === "solid" ? "#fff" : p.colorDark;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [s.btn, { backgroundColor: bg, opacity: pressed ? 0.85 : 1 }, variant === "ghost" && { borderWidth: 1.5, borderColor: p.colorLight }, style]}>
+    <Pressable
+      onPress={onPress}
+      android_ripple={{ color: variant === "solid" ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.08)" }}
+      style={({ pressed }) => [s.btn, { backgroundColor: bg, opacity: pressed ? 0.85 : 1 }, variant === "ghost" && { borderWidth: 1.5, borderColor: p.colorLight }, style]}
+    >
       {icon ? <Ionicons name={icon} size={20} color={fg} /> : null}
       <Text style={[s.btnText, { color: fg }]}>{title}</Text>
     </Pressable>
@@ -113,7 +117,11 @@ export function Ring({ value, size = 76, stroke = 8, color, label }: { value: nu
 export function Row({ icon, title, sub, right, onPress, iconTone }: { icon: keyof typeof Ionicons.glyphMap; title: string; sub?: string; right?: React.ReactNode; onPress?: () => void; iconTone?: string }) {
   const p = usePalette();
   return (
-    <Pressable onPress={onPress} style={s.row}>
+    <Pressable
+      onPress={onPress}
+      android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+      style={({ pressed }) => [s.row, pressed && { opacity: 0.8 }]}
+    >
       <View style={[s.rowIcon, { backgroundColor: p.wf ? "#EEE" : p.colorLight }]}>
         <Ionicons name={icon} size={20} color={p.tone(iconTone ?? p.colorDark)} />
       </View>
@@ -127,7 +135,19 @@ export function Row({ icon, title, sub, right, onPress, iconTone }: { icon: keyo
 }
 
 export const s = StyleSheet.create({
-  card: { backgroundColor: C.card, borderRadius: 20, padding: 16, marginBottom: 14, shadowColor: "#0F2A2E", shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  card: {
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: Platform.OS === "ios" ? "rgba(255, 255, 255, 0.75)" : "#EDF2F1",
+    shadowColor: "#0F2A2E",
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2.5,
+  },
   wfBox: { shadowOpacity: 0, elevation: 0, borderWidth: 1.5, borderColor: "#999", borderStyle: "dashed", backgroundColor: "#FAFAFA" },
   wfLabel: { position: "absolute", top: -9, left: 12, backgroundColor: "#222", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, zIndex: 2 },
   wfLabelText: { color: "#fff", fontSize: 9, fontWeight: "700", letterSpacing: 1 },
