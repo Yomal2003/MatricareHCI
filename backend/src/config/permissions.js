@@ -1,0 +1,20 @@
+// Role-based access control: permission -> roles allowed.
+module.exports = {
+  "self:read": ["mother"],
+  "self:consent": ["mother"],
+  "mothers:read": ["phm", "nursing", "moh"],
+  "mothers:write": ["phm"],
+  "children:read": ["phm", "nursing", "moh"],
+  "children:write": ["phm", "nursing"],
+  "visits:write": ["phm", "nursing"],
+  "immunizations:write": ["nursing"],
+  "growth:write": ["phm", "nursing"],
+  "appointments:read": ["phm", "nursing", "moh"],
+  "appointments:write": ["phm", "nursing"],
+  "queue:read": ["nursing"],
+  "queue:write": ["nursing"],
+  "alerts:read": ["moh", "phm"],
+  "alerts:write": ["moh"],
+  "reports:read": ["moh"],
+  "users:manage": ["moh"],
+};
