@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
@@ -29,6 +29,17 @@ export function Login() {
   const t = T[language];
   const [mode, setMode] = useState<"mother" | "staff">("mother");
   const [otpSent, setOtpSent] = useState(false);
+  const [loadingRole, setLoadingRole] = useState<Role | null>(null);
+
+  const handleDemoLogin = async (r: Role) => {
+    if (loadingRole) return;
+    setLoadingRole(r);
+    try {
+      await login(r);
+    } finally {
+      setLoadingRole(null);
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F0FDFA" }}>
@@ -72,9 +83,22 @@ export function Login() {
         <Text style={st.demo}>{t.demoLabel}</Text>
         <View style={st.demoGrid}>
           {(Object.keys(ROLE_CONFIG) as Role[]).map((r) => (
-            <Pressable key={r} onPress={() => login(r)} style={[st.demoBtn, { borderColor: ROLE_CONFIG[r].colorLight }]}>
+            <Pressable
+              key={r}
+              disabled={!!loadingRole}
+              onPress={() => handleDemoLogin(r)}
+              style={({ pressed }) => [
+                st.demoBtn,
+                { borderColor: ROLE_CONFIG[r].colorLight },
+                (pressed || loadingRole === r) && { opacity: 0.7, transform: [{ scale: 0.98 }] },
+              ]}
+            >
               <View style={[st.demoIcon, { backgroundColor: ROLE_CONFIG[r].colorLight }]}>
-                <Ionicons name={ROLE_ICON[r]} size={22} color={ROLE_CONFIG[r].colorDark} />
+                {loadingRole === r ? (
+                  <ActivityIndicator size="small" color={ROLE_CONFIG[r].colorDark} />
+                ) : (
+                  <Ionicons name={ROLE_ICON[r]} size={22} color={ROLE_CONFIG[r].colorDark} />
+                )}
               </View>
               <Text style={st.demoRole}>{r.toUpperCase()}</Text>
               <Text style={st.demoName} numberOfLines={1}>{ROLE_CONFIG[r].name}</Text>

@@ -1,20 +1,59 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
-// Set this to your computer's LAN IP in app.json -> expo.extra.apiUrl (Expo Go can't reach "localhost").
-export const API_URL: string = (Constants.expoConfig?.extra as any)?.apiUrl ?? "http://192.168.1.10:4000";
+export function getApiBaseUrl(): string {
+  // 1. Try to extract IP directly from Metro / Expo Go host
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest?.debuggerHost ||
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri;
+
+  if (hostUri) {
+    const ip = hostUri.split(":")[0];
+    if (ip && ip !== "localhost" && ip !== "127.0.0.1") {
+      return `http://${ip}:4000`;
+    }
+  }
+
+  // 2. Extra apiUrl in app.json
+  const configured = (Constants.expoConfig?.extra as any)?.apiUrl;
+  if (configured) return configured;
+
+  // 3. Fallback to current computer IP
+  return "http://172.20.10.3:4000";
+}
+
+export const API_URL: string = getApiBaseUrl();
 
 let token: string | null = null;
 export const setToken = (t: string | null) => (token = t);
 
-export async function api<T = any>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
-  const res = await fetch(API_URL + path, {
-    method: opts.method ?? "GET",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!res.ok) throw new Error(`${res.status} ${(await res.json().catch(() => ({}))).error ?? ""}`);
-  return res.json();
+export async function api<T = any>(
+  path: string,
+  opts: { method?: string; body?: unknown; timeoutMs?: number } = {}
+): Promise<T> {
+  const url = `${getApiBaseUrl()}${path}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 3500);
+
+  try {
+    const res = await fetch(url, {
+      method: opts.method ?? "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(`${res.status} ${errData.error || ""}`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ---- Offline queue: entries are saved locally and pushed when back online ----

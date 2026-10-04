@@ -1,0 +1,71 @@
+# ==========================================
+# Root .gitignore for MatriCare (Full Stack)
+# Covers Backend (Node/Express) & Frontend (React Native/Expo)
+# ==========================================
+
+# Dependencies
+node_modules/
+*/node_modules/
+.pnp
+.pnp.js
+
+# Environment variables & secrets (CRITICAL: keeps DB credentials secure)
+.env
+.env.*
+*.env
+*.local
+!.env.example
+
+# Expo & React Native build artifacts
+.expo/
+*/.expo/
+dist/
+web-build/
+.metro-health-check*
+
+# Native build folders (if prebuild or native projects are generated)
+android/
+ios/
+
+# Fastlane & mobile certificates/keys
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.keystore
+*.mobileprovision
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Testing & coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Temporary & cache files
+.cache/
+.eslintcache
+.stylelintcache
+tmp/
+temp/

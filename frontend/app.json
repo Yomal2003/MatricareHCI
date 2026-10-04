@@ -1,1 +1,21 @@
-{ "expo": { "name": "MatriCare", "slug": "matricare", "version": "1.0.0", "orientation": "portrait", "userInterfaceStyle": "light", "extra": { "apiUrl": "http://192.168.1.10:4000" } } }
+{
+  "expo": {
+    "name": "MatriCare",
+    "slug": "matricare",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "extra": {
+      "apiUrl": "http://172.20.10.3:4000"
+    },
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}
