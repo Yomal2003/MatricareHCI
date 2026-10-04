@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
 import { ROLE_CONFIG, T } from "../types";
 import { C, usePalette, WfLabel } from "./ui";
+import BottomNavBar from "./BottomNavBar";
 
 const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   home: "home", calendar: "calendar", document: "document-text", people: "people", search: "search",
@@ -53,20 +54,7 @@ export default function Shell({ title, children }: { title: string; children: Re
       {wireframeMode && <DotGrid />}
 
       {/* Bottom nav */}
-      <SafeAreaView edges={["bottom"]} style={st.navWrap} pointerEvents="box-none">
-        <View style={[st.nav, p.wf && { borderWidth: 1.5, borderColor: "#999", borderStyle: "dashed" }]}>
-          {wireframeMode && <WfLabel text="BOTTOM NAV" />}
-          {cfg.navItems.map((n) => {
-            const active = currentScreen === n.screen;
-            return (
-              <Pressable key={n.key} onPress={() => navigate(n.screen)} style={[st.navItem, active && { backgroundColor: p.colorLight }]}>
-                <Ionicons name={ICONS[n.icon]} size={22} color={active ? p.colorDark : "#8AA0A2"} />
-                {active && <Text style={[st.navLabel, { color: p.colorDark }]} numberOfLines={1}>{language === "si" ? n.labelSi : n.labelEn}</Text>}
-              </Pressable>
-            );
-          })}
-        </View>
-      </SafeAreaView>
+      <BottomNavBar />
     </View>
   );
 }
