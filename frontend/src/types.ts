@@ -99,10 +99,10 @@ export const ROLE_CONFIG: Record<
     ],
   },
   moh: {
-    color: "#7C3AED",
+    color: "#7B4FE0",
     colorLight: "#EDE9FE",
-    colorDark: "#6D28D9",
-    colorBg: "#F5F3FF",
+    colorDark: "#6B3FD4",
+    colorBg: "#F5F6FA",
     name: "Dr. Pradeep Silva",
     badge: "MOH · Monaragala District",
     homeScreen: "moh-home",
