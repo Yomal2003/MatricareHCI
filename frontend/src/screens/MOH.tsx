@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
 import { Language, T } from "../types";
 import { StaffManagement } from "./StaffManagement";
+import { MOHReportsScreen } from "./MOHReportsScreen";
 
 // Design Tokens & Palette
 const PRIMARY = "#7B4FE0";
@@ -1319,114 +1320,13 @@ export function MOHMissed() {
 
 export function MOHReports() {
   const { navigate } = useApp();
-  const [reportType, setReportType] = useState("H509 (Monthly MCH)");
-  const [period, setPeriod] = useState("October 2026");
 
   return (
     <View style={styles.screenContainer}>
-      <LinearGradient colors={["#7B4FE0", "#6B3FD4"]} style={styles.subHeaderGradient}>
-        <SafeAreaView edges={["top"]}>
-          <View style={styles.subHeaderRow}>
-            <Pressable onPress={() => navigate("moh-home")} style={styles.subBackBtn}>
-              <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-            </Pressable>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subHeaderTitle}>District Health Reports</Text>
-              <Text style={styles.subHeaderSubtitle}>Generate official returns & eRHMIS sync</Text>
-            </View>
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
-        <View style={styles.singleCard}>
-          <Text style={styles.sectionTitle}>OFFICIAL STATUTORY REPORTS</Text>
-
-          <Text style={styles.formFieldLabel}>Select Report Type:</Text>
-          <View style={styles.chipsWrap}>
-            {[
-              "H509 (Monthly MCH)",
-              "H524 (Family Health)",
-              "Expanded Immunization",
-              "Maternal Mortality Audit",
-            ].map((type) => (
-              <Pressable
-                key={type}
-                onPress={() => setReportType(type)}
-                style={[
-                  styles.chipButton,
-                  reportType === type && styles.chipButtonActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipButtonText,
-                    reportType === type && styles.chipButtonTextActive,
-                  ]}
-                >
-                  {type}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={[styles.formFieldLabel, { marginTop: 14 }]}>Reporting Period:</Text>
-          <View style={styles.chipsWrap}>
-            {["August 2026", "September 2026", "October 2026", "Q3 2026 Return"].map(
-              (p) => (
-                <Pressable
-                  key={p}
-                  onPress={() => setPeriod(p)}
-                  style={[
-                    styles.chipButton,
-                    period === p && styles.chipButtonActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.chipButtonText,
-                      period === p && styles.chipButtonTextActive,
-                    ]}
-                  >
-                    {p}
-                  </Text>
-                </Pressable>
-              )
-            )}
-          </View>
-
-          <Pressable
-            onPress={() =>
-              Alert.alert(
-                "Report Compiled",
-                `${reportType} for ${period} generated.\nPDF ready for download.`
-              )
-            }
-            style={[styles.modalPrimaryBtn, { backgroundColor: PRIMARY, marginTop: 20 }]}
-          >
-            <Ionicons name="document-text" size={18} color="#FFFFFF" />
-            <Text style={styles.modalPrimaryBtnText}>Generate Official PDF</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() =>
-              Alert.alert(
-                "eRHMIS Synced",
-                "District data bundle encrypted and transmitted to Ministry of Health eRHMIS server."
-              )
-            }
-            style={[styles.modalSecondaryBtn, { marginTop: 10 }]}
-          >
-            <Ionicons name="cloud-upload-outline" size={18} color={PRIMARY} />
-            <Text style={[styles.modalSecondaryBtnText, { color: PRIMARY }]}>
-              Export to National eRHMIS
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-
-      {/* Shared Bottom Nav */}
-      <MOHSharedBottomNav activeTab="Reports" />
+      <MOHReportsScreen
+        onBackToHome={() => navigate("moh-home")}
+        renderBottomNav={() => <MOHSharedBottomNav activeTab="Reports" />}
+      />
     </View>
   );
 }
