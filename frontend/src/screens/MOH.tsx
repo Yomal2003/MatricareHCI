@@ -16,6 +16,7 @@ import Svg, { Circle } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
 import { Language, T } from "../types";
+import { StaffManagement } from "./StaffManagement";
 
 // Design Tokens & Palette
 const PRIMARY = "#7B4FE0";
@@ -1200,12 +1201,26 @@ export function MOHAlerts() {
 
 export function MOHMissed() {
   const { navigate } = useApp();
+  const [activeSegment, setActiveSegment] = useState<"missed" | "staff">("staff");
   const missedData = [
     { label: "ANC Visit", count: 12, max: 15, color: PRIMARY },
     { label: "Postnatal", count: 7, max: 15, color: "#EC4899" },
     { label: "Immunization", count: 9, max: 15, color: WARNING },
     { label: "Growth Mon.", count: 5, max: 15, color: SUCCESS },
   ];
+
+  if (activeSegment === "staff") {
+    return (
+      <View style={styles.screenContainer}>
+        <StaffManagement
+          activeSegment={activeSegment}
+          onSegmentChange={setActiveSegment}
+          onBackToHome={() => navigate("moh-home")}
+          renderBottomNav={() => <MOHSharedBottomNav activeTab="Missed" />}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screenContainer}>
@@ -1219,6 +1234,38 @@ export function MOHMissed() {
               <Text style={styles.subHeaderTitle}>Missed Visits Analysis</Text>
               <Text style={styles.subHeaderSubtitle}>Overdue follow-up checks this month</Text>
             </View>
+          </View>
+
+          {/* Segmented Control: Missed Visits | Staff */}
+          <View style={styles.segmentedControlRow}>
+            <Pressable
+              onPress={() => setActiveSegment("missed")}
+              style={[styles.segmentItem, styles.segmentItemActive]}
+            >
+              <Ionicons
+                name="bar-chart-outline"
+                size={16}
+                color={PRIMARY}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={[styles.segmentItemText, styles.segmentItemTextActive]}>
+                Missed Visits
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setActiveSegment("staff")}
+              style={styles.segmentItem}
+            >
+              <Ionicons
+                name="people"
+                size={16}
+                color="rgba(255, 255, 255, 0.85)"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.segmentItemText}>
+                Staff
+              </Text>
+            </Pressable>
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -2054,6 +2101,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "rgba(255, 255, 255, 0.8)",
     marginTop: 1,
+  },
+  segmentedControlRow: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0, 0, 0, 0.18)",
+    borderRadius: 24,
+    padding: 4,
+    marginTop: 14,
+  },
+  segmentItem: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 9,
+    borderRadius: 20,
+  },
+  segmentItemActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  segmentItemText: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.85)",
+  },
+  segmentItemTextActive: {
+    color: PRIMARY,
   },
   filterPillsRow: {
     flexDirection: "row",
