@@ -687,16 +687,16 @@ export function MOHHome() {
             <Text style={styles.navLabel}>Alerts</Text>
           </Pressable>
 
-          {/* Tab 3: Missed (Bar-Chart Icon) */}
+          {/* Tab 3: Staff (People Icon) */}
           <Pressable
             onPress={() => navigate("moh-missed")}
             style={styles.navTab}
             accessibilityRole="tab"
           >
             <View style={styles.navIconBox}>
-              <Ionicons name="bar-chart-outline" size={21} color={TEXT_MUTED} />
+              <Ionicons name="people-outline" size={21} color={TEXT_MUTED} />
             </View>
-            <Text style={styles.navLabel}>Missed</Text>
+            <Text style={styles.navLabel}>Staff</Text>
           </Pressable>
 
           {/* Tab 4: Reports (Document Icon) */}
@@ -1217,7 +1217,7 @@ export function MOHMissed() {
           activeSegment={activeSegment}
           onSegmentChange={setActiveSegment}
           onBackToHome={() => navigate("moh-home")}
-          renderBottomNav={() => <MOHSharedBottomNav activeTab="Missed" />}
+          renderBottomNav={() => <MOHSharedBottomNav activeTab="Staff" />}
         />
       </View>
     );
@@ -1313,7 +1313,7 @@ export function MOHMissed() {
       </ScrollView>
 
       {/* Shared Bottom Nav */}
-      <MOHSharedBottomNav activeTab="Missed" />
+      <MOHSharedBottomNav activeTab="Staff" />
     </View>
   );
 }
@@ -1334,7 +1334,7 @@ export function MOHReports() {
 // ----------------------------------------------------
 // SHARED BOTTOM NAV FOR SUB-SCREENS
 // ----------------------------------------------------
-function MOHSharedBottomNav({ activeTab }: { activeTab: "Dashboard" | "Alerts" | "Missed" | "Reports" }) {
+function MOHSharedBottomNav({ activeTab }: { activeTab: "Dashboard" | "Alerts" | "Staff" | "Missed" | "Reports" }) {
   const { navigate } = useApp();
 
   return (
@@ -1402,22 +1402,22 @@ function MOHSharedBottomNav({ activeTab }: { activeTab: "Dashboard" | "Alerts" |
           <View
             style={[
               styles.navIconBox,
-              activeTab === "Missed" && styles.navIconBoxActive,
+              (activeTab === "Staff" || activeTab === "Missed") && styles.navIconBoxActive,
             ]}
           >
             <Ionicons
-              name={activeTab === "Missed" ? "bar-chart" : "bar-chart-outline"}
+              name={activeTab === "Staff" || activeTab === "Missed" ? "people" : "people-outline"}
               size={21}
-              color={activeTab === "Missed" ? PRIMARY : TEXT_MUTED}
+              color={activeTab === "Staff" || activeTab === "Missed" ? PRIMARY : TEXT_MUTED}
             />
           </View>
           <Text
             style={[
               styles.navLabel,
-              activeTab === "Missed" && styles.navLabelActive,
+              (activeTab === "Staff" || activeTab === "Missed") && styles.navLabelActive,
             ]}
           >
-            Missed
+            Staff
           </Text>
         </Pressable>
 

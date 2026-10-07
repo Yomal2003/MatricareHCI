@@ -109,7 +109,7 @@ export const ROLE_CONFIG: Record<
     navItems: [
       { key: "home", labelEn: "Dashboard", labelSi: "සාරාංශ", icon: "home", screen: "moh-home" },
       { key: "alerts", labelEn: "Alerts", labelSi: "අනතුරු", icon: "bell", screen: "moh-alerts" },
-      { key: "missed", labelEn: "Missed", labelSi: "මඟ හැරී", icon: "chart", screen: "moh-missed" },
+      { key: "staff", labelEn: "Staff", labelSi: "කාර්ය මණ්ඩලය", icon: "people", screen: "moh-missed" },
       { key: "reports", labelEn: "Reports", labelSi: "වාර්තා", icon: "report", screen: "moh-reports" },
     ],
   },
