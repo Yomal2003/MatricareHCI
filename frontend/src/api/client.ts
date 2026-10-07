@@ -34,7 +34,7 @@ export async function api<T = any>(
 ): Promise<T> {
   const url = `${getApiBaseUrl()}${path}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 3500);
+  const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15000);
 
   try {
     const res = await fetch(url, {

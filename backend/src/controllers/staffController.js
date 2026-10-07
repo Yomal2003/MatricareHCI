@@ -102,14 +102,8 @@ async function createStaff(req, res) {
     // Fallback email if omitted
     const targetEmail = email && email.trim() ? email.trim().toLowerCase() : `${username.toLowerCase()}@matricare.health.gov.lk`;
 
-    // 2. Check if email is already in use
-    const emailExists = await Staff.findOne({ email: targetEmail });
-    if (emailExists) {
-      return res.status(409).json({
-        error: "Conflict",
-        message: `A staff member with email '${targetEmail}' is already registered.`,
-      });
-    }
+    // Multiple staff accounts can share the same notification email.
+    // Unique identification is strictly enforced by the auto-generated username.
 
     // 4. Generate random 8-10 char temporary password
     const temporaryPassword = generateTemporaryPassword(10);
@@ -242,7 +236,8 @@ async function resendCredentials(req, res) {
         id: staff.id,
         username: staff.username,
         emailStatus: "failed",
-        message: "New temporary password generated, but email delivery failed. Please verify the staff email address.",
+        emailError: emailResult.error,
+        message: `Temporary password generated, but email delivery failed: ${emailResult.error || "SMTP error"}. Check BREVO_USER in .env.`,
       });
     }
 

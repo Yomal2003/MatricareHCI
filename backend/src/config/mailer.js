@@ -14,6 +14,9 @@ function createTransporter() {
       host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
       port: Number(process.env.SMTP_PORT) || 587,
       secure: false,
+      connectionTimeout: 5000, // 5s connection limit
+      greetingTimeout: 5000,
+      socketTimeout: 6000,
       auth: {
         user: process.env.SMTP_USER || process.env.BREVO_USER || process.env.GMAIL_USER,
         pass: process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS,
@@ -24,6 +27,9 @@ function createTransporter() {
   // Option B: Gmail SMTP
   return nodemailer.createTransport({
     service: "gmail",
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 6000,
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD,

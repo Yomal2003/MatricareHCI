@@ -437,6 +437,7 @@ export function StaffManagement({
         message: string;
       }>("/api/moh/staff", {
         method: "POST",
+        timeoutMs: 15000,
         body: {
           fullName: newStaff.name,
           role: backendRole,
@@ -515,6 +516,7 @@ export function StaffManagement({
       showToast("Generating new credentials & sending email...");
       const res = await api(`/api/moh/staff/${staff.id}/resend-credentials`, {
         method: "POST",
+        timeoutMs: 15000,
       });
       showToast(res.message || "Credentials resent successfully");
     } catch (err: any) {
