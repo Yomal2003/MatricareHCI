@@ -448,13 +448,45 @@ async function getStaffById(req, res) {
   }
 }
 
+/**
+ * DELETE /api/moh/staff/:id
+ * Permanently removes a staff member from the database.
+ */
+async function deleteStaff(req, res) {
+  try {
+    const { id } = req.params;
+    const staff = await Staff.findByIdAndDelete(id);
+
+    if (!staff) {
+      return res.status(404).json({
+        error: "NotFound",
+        message: "Staff member not found in database.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Staff member '${staff.fullName}' (${staff.username}) was permanently deleted from the database.`,
+      id: staff._id,
+    });
+  } catch (error) {
+    console.error("❌ Error in deleteStaff controller:", error);
+    return res.status(500).json({
+      error: "InternalServerError",
+      message: "Failed to delete staff member from database.",
+    });
+  }
+}
+
 module.exports = {
   validateStaffInput,
   validateResetPasswordInput,
   createStaff,
   resendCredentials,
+  deleteStaff,
   loginStaff,
   resetPassword,
   getAllStaff,
   getStaffById,
 };
+

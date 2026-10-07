@@ -334,8 +334,10 @@ export function StaffManagement({
   const [staffList, setStaffList] = useState<StaffMember[]>(INITIAL_STAFF);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
 
-  // Screen 4 modal state
+  // Screen 4 & 5 modal states
   const [deactivateModalVisible, setDeactivateModalVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Screen 3 edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -524,6 +526,32 @@ export function StaffManagement({
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!selectedStaff) return;
+    setIsDeleting(true);
+    try {
+      await api(`/api/moh/staff/${selectedStaff.id}`, {
+        method: "DELETE",
+        timeoutMs: 15000,
+      });
+      setStaffList((prev) => prev.filter((s) => s.id !== selectedStaff.id));
+      setDeleteModalVisible(false);
+      setSelectedStaff(null);
+      setCurrentScreen("list");
+      showToast("Staff member permanently deleted from database");
+    } catch (err: any) {
+      console.warn("Delete staff error:", err);
+      // Remove from local list as fallback
+      setStaffList((prev) => prev.filter((s) => s.id !== selectedStaff.id));
+      setDeleteModalVisible(false);
+      setSelectedStaff(null);
+      setCurrentScreen("list");
+      showToast(`Removed from list (DB: ${err.message || "Removed"})`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Toast Notification */}
@@ -578,6 +606,7 @@ export function StaffManagement({
           onDeactivatePress={() => setDeactivateModalVisible(true)}
           onReactivatePress={() => handleReactivateStaff(selectedStaff)}
           onResendCredentials={handleResendCredentials}
+          onDeletePress={() => setDeleteModalVisible(true)}
         />
       )}
 
@@ -587,6 +616,15 @@ export function StaffManagement({
         staffName={selectedStaff?.name || "Staff Member"}
         onCancel={() => setDeactivateModalVisible(false)}
         onConfirm={handleConfirmDeactivation}
+      />
+
+      {/* SCREEN 5: Delete Permanently Confirmation Modal */}
+      <Screen5DeleteModal
+        visible={deleteModalVisible}
+        staffName={selectedStaff?.name || "Staff Member"}
+        isDeleting={isDeleting}
+        onCancel={() => setDeleteModalVisible(false)}
+        onConfirm={handleConfirmDelete}
       />
 
       {/* Filter Options Picker Modal */}
@@ -1203,6 +1241,7 @@ interface Screen3Props {
   onDeactivatePress: () => void;
   onReactivatePress: () => void;
   onResendCredentials?: (staff: StaffMember) => void;
+  onDeletePress?: () => void;
 }
 
 function Screen3StaffDetail({
@@ -1214,6 +1253,7 @@ function Screen3StaffDetail({
   onDeactivatePress,
   onReactivatePress,
   onResendCredentials,
+  onDeletePress,
 }: Screen3Props) {
   // Local edit states
   const [name, setName] = useState(staff.name);
@@ -1637,23 +1677,60 @@ function Screen3StaffDetail({
                 />
                 <Text style={styles.deactivateBtnText}>Deactivate Account</Text>
               </Pressable>
+              <Pressable
+                onPress={onDeletePress}
+                style={({ pressed }) => [
+                  styles.deleteBtn,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color="#DC2626"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.deleteBtnText}>
+                  Delete Staff 
+                </Text>
+              </Pressable>
             </>
           ) : (
-            <Pressable
-              onPress={onReactivatePress}
-              style={({ pressed }) => [
-                styles.reactivateBtn,
-                pressed && { opacity: 0.85 },
-              ]}
-            >
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={18}
-                color="#FFFFFF"
-                style={{ marginRight: 6 }}
-              />
-              <Text style={styles.reactivateBtnText}>Reactivate Account</Text>
-            </Pressable>
+            <>
+              <Pressable
+                onPress={onReactivatePress}
+                style={({ pressed }) => [
+                  styles.reactivateBtn,
+                  pressed && { opacity: 0.85 },
+                ]}
+              >
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={18}
+                  color="#FFFFFF"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.reactivateBtnText}>Reactivate Account</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={onDeletePress}
+                style={({ pressed }) => [
+                  styles.deleteBtn,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color="#DC2626"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.deleteBtnText}>
+                  Delete Staff 
+                </Text>
+              </Pressable>
+            </>
           )}
         </View>
       </ScrollView>
@@ -1720,6 +1797,86 @@ function Screen4DeactivateModal({
               ]}
             >
               <Text style={styles.modalDeactivateBtnText}>Deactivate</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// SCREEN 5: Delete Confirmation Modal (Permanent Database Delete)
+// ─────────────────────────────────────────────────────────────
+interface Screen5DeleteModalProps {
+  visible: boolean;
+  staffName: string;
+  isDeleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function Screen5DeleteModal({
+  visible,
+  staffName,
+  isDeleting,
+  onCancel,
+  onConfirm,
+}: Screen5DeleteModalProps) {
+  return (
+    <Modal
+      transparent
+      animationType="fade"
+      visible={visible}
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          {/* Centered Red Trash Icon Circle */}
+          <View
+            style={[
+              styles.modalWarningIconBox,
+              { backgroundColor: "#FEE2E2" },
+            ]}
+          >
+            <Ionicons name="trash" size={32} color="#DC2626" />
+          </View>
+
+          {/* Title */}
+          <Text style={styles.modalTitle}>Delete {staffName}?</Text>
+
+          {/* Body Text */}
+          <Text style={styles.modalBodyText}>
+            This action will permanently delete this staff member's record from the database. This cannot be undone.
+          </Text>
+
+          {/* Actions Row */}
+          <View style={styles.modalActionsRow}>
+            <Pressable
+              disabled={isDeleting}
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalCancelBtn,
+                pressed && { backgroundColor: "#F1F5F9" },
+              ]}
+            >
+              <Text style={styles.modalCancelBtnText}>Cancel</Text>
+            </Pressable>
+
+            <Pressable
+              disabled={isDeleting}
+              onPress={onConfirm}
+              style={({ pressed }) => [
+                styles.modalDeleteBtn,
+                pressed && { opacity: 0.9 },
+                isDeleting && { opacity: 0.7 },
+              ]}
+            >
+              {isDeleting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.modalDeleteBtnText}>Delete</Text>
+              )}
             </Pressable>
           </View>
         </View>
@@ -2637,6 +2794,40 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   modalDeactivateBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  deleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1.5,
+    borderColor: "#EF4444",
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginTop: 10,
+  },
+  deleteBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#DC2626",
+  },
+  modalDeleteBtn: {
+    flex: 1,
+    backgroundColor: "#DC2626",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  modalDeleteBtnText: {
     fontSize: 14,
     fontWeight: "800",
     color: "#FFFFFF",

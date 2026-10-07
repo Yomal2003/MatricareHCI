@@ -17,6 +17,7 @@ const {
   validateStaffInput,
   createStaff,
   resendCredentials,
+  deleteStaff,
   getAllStaff,
   getStaffById,
 } = require("../controllers/staffController");
@@ -57,5 +58,12 @@ router.get("/", getAllStaff);
  * @access  Protected (MOH only)
  */
 router.get("/:id", getStaffById);
+
+/**
+ * @route   DELETE /api/moh/staff/:id
+ * @desc    Permanently delete a staff member from the database
+ * @access  Protected (MOH only)
+ */
+router.delete("/:id", deleteStaff);
 
 module.exports = router;
