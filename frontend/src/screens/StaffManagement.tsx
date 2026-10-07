@@ -314,14 +314,14 @@ function getInitials(name: string): string {
 }
 
 interface StaffManagementProps {
-  activeSegment: "missed" | "staff";
-  onSegmentChange: (segment: "missed" | "staff") => void;
+  activeSegment?: "missed" | "staff";
+  onSegmentChange?: (segment: "missed" | "staff") => void;
   onBackToHome: () => void;
   renderBottomNav?: () => React.ReactNode;
 }
 
 export function StaffManagement({
-  activeSegment,
+  activeSegment = "staff",
   onSegmentChange,
   onBackToHome,
   renderBottomNav,
@@ -502,8 +502,8 @@ export function StaffManagement({
 interface Screen1Props {
   staffList: StaffMember[];
   allStaffCount: number;
-  activeSegment: "missed" | "staff";
-  onSegmentChange: (seg: "missed" | "staff") => void;
+  activeSegment?: "missed" | "staff";
+  onSegmentChange?: (seg: "missed" | "staff") => void;
   onBackToHome: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
@@ -539,65 +539,16 @@ function Screen1StaffList({
       >
         <SafeAreaView edges={["top"]}>
           {/* Sub-header Navigation Row */}
-          <View style={styles.headerTopRow}>
+          <View style={[styles.headerTopRow, { marginBottom: 4 }]}>
             <Pressable onPress={onBackToHome} style={styles.backCircleBtn}>
               <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
             </Pressable>
             <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>Staff & Missed Visits</Text>
+              <Text style={styles.headerTitle}>Staff Management</Text>
               <Text style={styles.headerSubtitle}>
                 MOH Buttala Field Healthcare Force
               </Text>
             </View>
-          </View>
-
-          {/* Segmented Control: "Missed Visits" | "Staff" */}
-          <View style={styles.segmentedControlContainer}>
-            <Pressable
-              onPress={() => onSegmentChange("missed")}
-              style={[
-                styles.segmentTab,
-                activeSegment === "missed" && styles.segmentTabActive,
-              ]}
-            >
-              <Ionicons
-                name="bar-chart-outline"
-                size={16}
-                color={activeSegment === "missed" ? PRIMARY : "rgba(255, 255, 255, 0.85)"}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  styles.segmentTabText,
-                  activeSegment === "missed" && styles.segmentTabTextActive,
-                ]}
-              >
-                Missed Visits
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => onSegmentChange("staff")}
-              style={[
-                styles.segmentTab,
-                activeSegment === "staff" && styles.segmentTabActive,
-              ]}
-            >
-              <Ionicons
-                name="people"
-                size={16}
-                color={activeSegment === "staff" ? PRIMARY : "rgba(255, 255, 255, 0.85)"}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  styles.segmentTabText,
-                  activeSegment === "staff" && styles.segmentTabTextActive,
-                ]}
-              >
-                Staff
-              </Text>
-            </Pressable>
           </View>
         </SafeAreaView>
       </LinearGradient>

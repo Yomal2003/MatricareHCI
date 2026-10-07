@@ -1080,7 +1080,15 @@ export function MOHHome() {
 // ----------------------------------------------------
 export function MOHAlerts() {
   const { navigate } = useApp();
+  const [activeSegment, setActiveSegment] = useState<"alerts" | "missed">("alerts");
   const [filter, setFilter] = useState<"all" | "urgent" | "watch">("all");
+
+  const missedData = [
+    { label: "ANC Visit", count: 12, max: 15, color: PRIMARY },
+    { label: "Postnatal", count: 7, max: 15, color: "#EC4899" },
+    { label: "Immunization", count: 9, max: 15, color: WARNING },
+    { label: "Growth Mon.", count: 5, max: 15, color: SUCCESS },
+  ];
 
   const ALERTS_DATA = [
     { id: "1", name: "Dilani Kumari", why: "BP 150/100 · 34 wks", area: "Okkampitiya", lvl: "danger", time: "2h ago" },
@@ -1106,93 +1114,193 @@ export function MOHAlerts() {
               <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
             </Pressable>
             <View style={{ flex: 1 }}>
-              <Text style={styles.subHeaderTitle}>High-Risk Cases (18)</Text>
-              <Text style={styles.subHeaderSubtitle}>Prioritized maternal triage queue</Text>
+              <Text style={styles.subHeaderTitle}>
+                {activeSegment === "alerts" ? "High-Risk Cases (18)" : "Missed Visits Analysis"}
+              </Text>
+              <Text style={styles.subHeaderSubtitle}>
+                {activeSegment === "alerts"
+                  ? "Prioritized maternal triage queue"
+                  : "Overdue follow-up checks this month"}
+              </Text>
             </View>
+          </View>
+
+          {/* Segmented Control: Alerts | Missed Visits */}
+          <View style={styles.segmentedControlRow}>
+            <Pressable
+              onPress={() => setActiveSegment("alerts")}
+              style={[
+                styles.segmentItem,
+                activeSegment === "alerts" && styles.segmentItemActive,
+              ]}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={16}
+                color={activeSegment === "alerts" ? PRIMARY : "rgba(255, 255, 255, 0.85)"}
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                style={[
+                  styles.segmentItemText,
+                  activeSegment === "alerts" && styles.segmentItemTextActive,
+                ]}
+              >
+                Alerts
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setActiveSegment("missed")}
+              style={[
+                styles.segmentItem,
+                activeSegment === "missed" && styles.segmentItemActive,
+              ]}
+            >
+              <Ionicons
+                name="bar-chart-outline"
+                size={16}
+                color={activeSegment === "missed" ? PRIMARY : "rgba(255, 255, 255, 0.85)"}
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                style={[
+                  styles.segmentItemText,
+                  activeSegment === "missed" && styles.segmentItemTextActive,
+                ]}
+              >
+                Missed Visits
+              </Text>
+            </Pressable>
           </View>
         </SafeAreaView>
       </LinearGradient>
 
-      <View style={styles.filterPillsRow}>
-        {(["all", "urgent", "watch"] as const).map((f) => (
-          <Pressable
-            key={f}
-            onPress={() => setFilter(f)}
-            style={[
-              styles.filterPill,
-              filter === f && { backgroundColor: PRIMARY },
-            ]}
-          >
-            <Text
-              style={[
-                styles.filterPillText,
-                filter === f && { color: "#FFFFFF", fontWeight: "800" },
-              ]}
-            >
-              {f === "all" ? "All Cases (18)" : f === "urgent" ? "Urgent (8)" : "Watch List (10)"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {activeSegment === "alerts" ? (
+        <>
+          <View style={styles.filterPillsRow}>
+            {(["all", "urgent", "watch"] as const).map((f) => (
+              <Pressable
+                key={f}
+                onPress={() => setFilter(f)}
+                style={[
+                  styles.filterPill,
+                  filter === f && { backgroundColor: PRIMARY },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    filter === f && { color: "#FFFFFF", fontWeight: "800" },
+                  ]}
+                >
+                  {f === "all" ? "All Cases (18)" : f === "urgent" ? "Urgent (8)" : "Watch List (10)"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
-        {filtered.map((item) => (
-          <Pressable
-            key={item.id}
-            onPress={() =>
-              Alert.alert(
-                item.name,
-                `${item.why}\nArea: ${item.area}\nFlagged: ${item.time}`,
-                [
-                  { text: "Call PHM", onPress: () => {} },
-                  { text: "Refer Hospital", onPress: () => {} },
-                  { text: "Close", style: "cancel" },
-                ]
-              )
-            }
-            style={styles.alertCardItem}
-          >
-            <View
-              style={[
-                styles.alertIconCircle,
-                { backgroundColor: item.lvl === "danger" ? DANGER_BG : WARNING_BG },
-              ]}
-            >
-              <Ionicons
-                name={item.lvl === "danger" ? "alert-circle" : "warning"}
-                size={20}
-                color={item.lvl === "danger" ? DANGER : WARNING}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={styles.alertPatientName}>{item.name}</Text>
-                <Text style={styles.alertTimeText}>{item.time}</Text>
-              </View>
-              <Text style={styles.alertReasonText}>{item.why}</Text>
-              <View style={styles.alertMetaRow}>
-                <Ionicons name="location-outline" size={12} color={TEXT_MUTED} />
-                <Text style={styles.alertAreaText}>{item.area} Zone</Text>
+          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
+            {filtered.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() =>
+                  Alert.alert(
+                    item.name,
+                    `${item.why}\nArea: ${item.area}\nFlagged: ${item.time}`,
+                    [
+                      { text: "Call PHM", onPress: () => {} },
+                      { text: "Refer Hospital", onPress: () => {} },
+                      { text: "Close", style: "cancel" },
+                    ]
+                  )
+                }
+                style={styles.alertCardItem}
+              >
                 <View
                   style={[
-                    styles.tagBadgeMini,
+                    styles.alertIconCircle,
                     { backgroundColor: item.lvl === "danger" ? DANGER_BG : WARNING_BG },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.tagBadgeMiniText,
-                      { color: item.lvl === "danger" ? DANGER_TEXT : WARNING_TEXT },
-                    ]}
-                  >
-                    {item.lvl === "danger" ? "Urgent" : "Watch"}
+                  <Ionicons
+                    name={item.lvl === "danger" ? "alert-circle" : "warning"}
+                    size={20}
+                    color={item.lvl === "danger" ? DANGER : WARNING}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={styles.alertPatientName}>{item.name}</Text>
+                    <Text style={styles.alertTimeText}>{item.time}</Text>
+                  </View>
+                  <Text style={styles.alertReasonText}>{item.why}</Text>
+                  <View style={styles.alertMetaRow}>
+                    <Ionicons name="location-outline" size={12} color={TEXT_MUTED} />
+                    <Text style={styles.alertAreaText}>{item.area} Zone</Text>
+                    <View
+                      style={[
+                        styles.tagBadgeMini,
+                        { backgroundColor: item.lvl === "danger" ? DANGER_BG : WARNING_BG },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.tagBadgeMiniText,
+                          { color: item.lvl === "danger" ? DANGER_TEXT : WARNING_TEXT },
+                        ]}
+                      >
+                        {item.lvl === "danger" ? "Urgent" : "Watch"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </>
+      ) : (
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
+          {/* Column Bar Overview */}
+          <View style={styles.singleCard}>
+            <Text style={styles.sectionTitle}>MISSED VISITS BY CATEGORY</Text>
+            <View style={styles.missedChartRow}>
+              {missedData.map((d) => (
+                <View key={d.label} style={styles.missedBarCol}>
+                  <Text style={styles.missedBarCount}>{d.count}</Text>
+                  <View style={styles.missedBarTrack}>
+                    <View
+                      style={[
+                        styles.missedBarFill,
+                        { height: (d.count / d.max) * 110, backgroundColor: d.color },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.missedBarLabel} numberOfLines={1}>
+                    {d.label}
                   </Text>
                 </View>
-              </View>
+              ))}
             </View>
-          </Pressable>
-        ))}
-      </ScrollView>
+          </View>
+
+          {/* Breakdown by PHM Zone */}
+          <View style={[styles.singleCard, { marginTop: 16 }]}>
+            <Text style={styles.sectionTitle}>MISSED VISITS BY PHM ZONE</Text>
+            {ZONES.map((zone) => (
+              <View key={zone.id} style={styles.missedZoneRow}>
+                <View style={styles.missedZoneInfo}>
+                  <Text style={styles.missedZoneName}>{zone.name} Zone</Text>
+                  <Text style={styles.missedZoneSub}>Assigned PHM: {zone.phmName}</Text>
+                </View>
+                <View style={styles.missedCountPill}>
+                  <Text style={styles.missedCountPillText}>{zone.overdueCount} missed</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      )}
 
       {/* Shared Bottom Nav */}
       <MOHSharedBottomNav activeTab="Alerts" />
@@ -1202,118 +1310,13 @@ export function MOHAlerts() {
 
 export function MOHMissed() {
   const { navigate } = useApp();
-  const [activeSegment, setActiveSegment] = useState<"missed" | "staff">("staff");
-  const missedData = [
-    { label: "ANC Visit", count: 12, max: 15, color: PRIMARY },
-    { label: "Postnatal", count: 7, max: 15, color: "#EC4899" },
-    { label: "Immunization", count: 9, max: 15, color: WARNING },
-    { label: "Growth Mon.", count: 5, max: 15, color: SUCCESS },
-  ];
-
-  if (activeSegment === "staff") {
-    return (
-      <View style={styles.screenContainer}>
-        <StaffManagement
-          activeSegment={activeSegment}
-          onSegmentChange={setActiveSegment}
-          onBackToHome={() => navigate("moh-home")}
-          renderBottomNav={() => <MOHSharedBottomNav activeTab="Staff" />}
-        />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.screenContainer}>
-      <LinearGradient colors={["#7B4FE0", "#6B3FD4"]} style={styles.subHeaderGradient}>
-        <SafeAreaView edges={["top"]}>
-          <View style={styles.subHeaderRow}>
-            <Pressable onPress={() => navigate("moh-home")} style={styles.subBackBtn}>
-              <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-            </Pressable>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subHeaderTitle}>Missed Visits Analysis</Text>
-              <Text style={styles.subHeaderSubtitle}>Overdue follow-up checks this month</Text>
-            </View>
-          </View>
-
-          {/* Segmented Control: Missed Visits | Staff */}
-          <View style={styles.segmentedControlRow}>
-            <Pressable
-              onPress={() => setActiveSegment("missed")}
-              style={[styles.segmentItem, styles.segmentItemActive]}
-            >
-              <Ionicons
-                name="bar-chart-outline"
-                size={16}
-                color={PRIMARY}
-                style={{ marginRight: 6 }}
-              />
-              <Text style={[styles.segmentItemText, styles.segmentItemTextActive]}>
-                Missed Visits
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setActiveSegment("staff")}
-              style={styles.segmentItem}
-            >
-              <Ionicons
-                name="people"
-                size={16}
-                color="rgba(255, 255, 255, 0.85)"
-                style={{ marginRight: 6 }}
-              />
-              <Text style={styles.segmentItemText}>
-                Staff
-              </Text>
-            </Pressable>
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
-        {/* Column Bar Overview */}
-        <View style={styles.singleCard}>
-          <Text style={styles.sectionTitle}>MISSED VISITS BY CATEGORY</Text>
-          <View style={styles.missedChartRow}>
-            {missedData.map((d) => (
-              <View key={d.label} style={styles.missedBarCol}>
-                <Text style={styles.missedBarCount}>{d.count}</Text>
-                <View style={styles.missedBarTrack}>
-                  <View
-                    style={[
-                      styles.missedBarFill,
-                      { height: (d.count / d.max) * 110, backgroundColor: d.color },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.missedBarLabel} numberOfLines={1}>
-                  {d.label}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Breakdown by PHM Zone */}
-        <View style={[styles.singleCard, { marginTop: 16 }]}>
-          <Text style={styles.sectionTitle}>MISSED VISITS BY PHM ZONE</Text>
-          {ZONES.map((zone) => (
-            <View key={zone.id} style={styles.missedZoneRow}>
-              <View style={styles.missedZoneInfo}>
-                <Text style={styles.missedZoneName}>{zone.name} Zone</Text>
-                <Text style={styles.missedZoneSub}>Assigned PHM: {zone.phmName}</Text>
-              </View>
-              <View style={styles.missedCountPill}>
-                <Text style={styles.missedCountPillText}>{zone.overdueCount} missed</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* Shared Bottom Nav */}
-      <MOHSharedBottomNav activeTab="Staff" />
+      <StaffManagement
+        onBackToHome={() => navigate("moh-home")}
+        renderBottomNav={() => <MOHSharedBottomNav activeTab="Staff" />}
+      />
     </View>
   );
 }
