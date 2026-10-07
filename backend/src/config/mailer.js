@@ -68,7 +68,9 @@ async function verifyTransporter() {
  */
 async function sendEmail({ to, subject, html, text }) {
   try {
-    const fromAddress = process.env.EMAIL_FROM || `"MatriCare MOH Office" <${process.env.GMAIL_USER}>`;
+    const fromAddress =
+      process.env.EMAIL_FROM ||
+      `"MatriCare MOH Office" <${process.env.BREVO_USER || process.env.GMAIL_USER || "no-reply@matricare.health.gov.lk"}>`;
 
     const info = await transporter.sendMail({
       from: fromAddress,
