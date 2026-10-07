@@ -13,42 +13,54 @@ const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   edit: "create", sync: "sync", bell: "notifications", chart: "bar-chart", report: "clipboard",
 };
 
-export default function Shell({ title, children }: { title: string; children: React.ReactNode }) {
+export default function Shell({
+  title,
+  children,
+  header,
+  backgroundColor,
+}: {
+  title: string;
+  children: React.ReactNode;
+  header?: React.ReactNode;
+  backgroundColor?: string;
+}) {
   const { role, language, isOnline, isSyncing, currentScreen, navigate, wireframeMode, toggleOnline, pending } = useApp();
   const p = usePalette();
   const cfg = ROLE_CONFIG[role!];
   const t = T[language];
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.wf ? "#F2F2F2" : p.colorBg }}>
+    <View style={{ flex: 1, backgroundColor: backgroundColor ?? (p.wf ? "#F2F2F2" : p.colorBg) }}>
       {/* Top bar */}
-      <SafeAreaView edges={["top"]} style={{ backgroundColor: p.color }}>
+      <SafeAreaView edges={["top"]} style={{ backgroundColor: header ? "#079DB8" : p.color }}>
         {wireframeMode && <WfLabel text="TOP BAR" />}
-        <View style={st.top}>
-          <View style={st.avatar}>
-            <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>
+        {header ?? (
+          <View style={st.top}>
+            <View style={st.avatar}>
+              <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={st.title}>{title}</Text>
+              <Text style={st.badge}>{cfg.badge}</Text>
+            </View>
+            <Pressable
+              onPress={toggleOnline}
+              hitSlop={10}
+              android_ripple={{ color: "rgba(255,255,255,0.25)", borderless: true, radius: 20 }}
+              style={({ pressed }) => [st.iconBtn, pressed && { opacity: 0.75 }]}
+            >
+              <Ionicons name={isOnline ? "cloud-done" : "cloud-offline"} size={21} color="#fff" />
+            </Pressable>
+            <Pressable
+              onPress={() => navigate("settings")}
+              hitSlop={10}
+              android_ripple={{ color: "rgba(255,255,255,0.25)", borderless: true, radius: 20 }}
+              style={({ pressed }) => [st.iconBtn, pressed && { opacity: 0.75 }]}
+            >
+              <Ionicons name="settings-sharp" size={21} color="#fff" />
+            </Pressable>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={st.title}>{title}</Text>
-            <Text style={st.badge}>{cfg.badge}</Text>
-          </View>
-          <Pressable
-            onPress={toggleOnline}
-            hitSlop={10}
-            android_ripple={{ color: "rgba(255,255,255,0.25)", borderless: true, radius: 20 }}
-            style={({ pressed }) => [st.iconBtn, pressed && { opacity: 0.75 }]}
-          >
-            <Ionicons name={isOnline ? "cloud-done" : "cloud-offline"} size={21} color="#fff" />
-          </Pressable>
-          <Pressable
-            onPress={() => navigate("settings")}
-            hitSlop={10}
-            android_ripple={{ color: "rgba(255,255,255,0.25)", borderless: true, radius: 20 }}
-            style={({ pressed }) => [st.iconBtn, pressed && { opacity: 0.75 }]}
-          >
-            <Ionicons name="settings-sharp" size={21} color="#fff" />
-          </Pressable>
-        </View>
+        )}
         {(!isOnline || isSyncing) && (
           <View style={[st.banner, { backgroundColor: isOnline ? "rgba(0,0,0,0.18)" : "#7C2D12" }]}>
             <Ionicons name={isOnline ? "sync" : "cloud-offline"} size={14} color="#fff" />

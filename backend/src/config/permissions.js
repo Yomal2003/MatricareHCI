@@ -2,6 +2,8 @@
 module.exports = {
   "self:read": ["mother"],
   "self:consent": ["mother"],
+  "self:appointments": ["mother"],
+  "family:self": ["family_member"],
   "mothers:read": ["phm", "nursing", "moh"],
   "mothers:write": ["phm"],
   "children:read": ["phm", "nursing", "moh"],

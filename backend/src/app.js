@@ -22,6 +22,7 @@ app.use("/auth", rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }), require("./r
 // Everything below requires a valid JWT.
 app.use(authenticate);
 app.use("/me", require("./routes/me"));
+app.use("/family-member", require("./routes/familyMember"));
 app.use("/mothers", require("./routes/mothers"));
 app.use("/children", require("./routes/children"));
 app.use("/records", require("./routes/records"));

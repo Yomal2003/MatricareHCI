@@ -9,15 +9,19 @@ import { api, flushPending, getPending, setToken } from "./src/api/client";
 import { Splash, Login } from "./src/screens/SplashLogin";
 import Settings from "./src/screens/Settings";
 import { MotherHome, MotherAppointments, MotherRecords, MotherConsent } from "./src/screens/Mother";
+import { FamilyMemberHome } from "./src/screens/FamilyMember";
 import { PHMHome, PHMFollowups, PHMSearch, PHMEntry, PHMSync } from "./src/screens/PHM";
 import { NursingHome, NursingEntry, NursingSearch } from "./src/screens/Nursing";
 import { MOHHome, MOHAlerts, MOHMissed, MOHReports } from "./src/screens/MOH";
 
 // Screen → component, and which roles may open it (client-side guard; server enforces too).
 const ROUTES: Record<Screen, { C: React.ComponentType; roles?: Role[] }> = {
-  splash: { C: Splash }, login: { C: Login }, settings: { C: Settings, roles: ["mother", "phm", "nursing", "moh"] },
+  splash: { C: Splash }, login: { C: Login }, settings: { C: Settings, roles: ["mother", "family_member", "phm", "nursing", "moh"] },
   "mother-home": { C: MotherHome, roles: ["mother"] }, "mother-appointments": { C: MotherAppointments, roles: ["mother"] },
   "mother-records": { C: MotherRecords, roles: ["mother"] }, "mother-consent": { C: MotherConsent, roles: ["mother"] },
+  "family-member-home": { C: FamilyMemberHome, roles: ["family_member"] },
+  "family-member-notifications": { C: FamilyMemberHome, roles: ["family_member"] },
+  "family-member-consent": { C: FamilyMemberHome, roles: ["family_member"] },
   "phm-home": { C: PHMHome, roles: ["phm"] }, "phm-followups": { C: PHMFollowups, roles: ["phm"] },
   "phm-search": { C: PHMSearch, roles: ["phm"] }, "phm-entry": { C: PHMEntry, roles: ["phm"] }, "phm-sync": { C: PHMSync, roles: ["phm"] },
   "nursing-home": { C: NursingHome, roles: ["nursing"] }, "nursing-entry": { C: NursingEntry, roles: ["nursing"] },
@@ -72,13 +76,31 @@ export default function App() {
     setScreen(ROLE_CONFIG[r].homeScreen);
   }, []);
 
+  const requestPhoneOtp = useCallback(async (phone: string) => {
+    return api<{ sent: boolean; devOtp?: string }>("/auth/otp/request", {
+      method: "POST",
+      body: { phone },
+    });
+  }, []);
+
+  const verifyPhoneOtp = useCallback(async (phone: string, otp: string) => {
+    const result = await api<{ token: string; user: { id: string; name: string; role: Role } }>("/auth/otp/verify", {
+      method: "POST",
+      body: { phone, otp },
+    });
+    setToken(result.token);
+    setUser(result.user);
+    setRole(result.user.role);
+    setScreen(ROLE_CONFIG[result.user.role].homeScreen);
+  }, []);
+
   const logout = useCallback(() => { setToken(null); setRole(null); setUser(null); setScreen("login"); }, []);
 
   const value = useMemo(() => ({
     role, user, language, isOnline: online, isSyncing, currentScreen, wireframeMode, showLanguageModal, pending,
-    navigate, login, logout, setLanguage, setWireframeMode, setShowLanguageModal, refreshPending,
+    navigate, login, logout, requestPhoneOtp, verifyPhoneOtp, setLanguage, setWireframeMode, setShowLanguageModal, refreshPending,
     toggleOnline: () => setForcedOffline((v) => !v),
-  }), [role, user, language, online, isSyncing, currentScreen, wireframeMode, showLanguageModal, pending, navigate, login, logout]);
+  }), [role, user, language, online, isSyncing, currentScreen, wireframeMode, showLanguageModal, pending, navigate, login, logout, requestPhoneOtp, verifyPhoneOtp]);
 
   const Current = ROUTES[currentScreen].C;
   return (

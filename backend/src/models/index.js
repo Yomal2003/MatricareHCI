@@ -8,4 +8,5 @@ module.exports = {
   Appointment: require("./Appointment"),
   QueueEntry: require("./QueueEntry"),
   Alert: require("./Alert"),
+  FamilyNotification: require("./FamilyNotification"),
 };
