@@ -461,9 +461,20 @@ export function StaffManagement({
       );
     } catch (err: any) {
       console.warn("Failed to save to database via API:", err.message);
-      setStaffList((prev) => [newStaff, ...prev]);
-      setCurrentScreen("list");
-      showToast(`Saved locally (DB: ${err.message || "Failed to reach server"})`);
+      const isClientError =
+        err.message?.includes("409") ||
+        err.message?.includes("400") ||
+        err.message?.toLowerCase().includes("conflict") ||
+        err.message?.toLowerCase().includes("already registered");
+
+      if (isClientError) {
+        showToast(err.message);
+      } else {
+        // Offline / Network fallback
+        setStaffList((prev) => [newStaff, ...prev]);
+        setCurrentScreen("list");
+        showToast(`Saved locally (DB: ${err.message || "Server offline"})`);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -497,6 +508,18 @@ export function StaffManagement({
     );
     setSelectedStaff(reactivatedStaff);
     showToast("Staff account reactivated");
+  };
+
+  const handleResendCredentials = async (staff: StaffMember) => {
+    try {
+      showToast("Generating new credentials & sending email...");
+      const res = await api(`/api/moh/staff/${staff.id}/resend-credentials`, {
+        method: "POST",
+      });
+      showToast(res.message || "Credentials resent successfully");
+    } catch (err: any) {
+      showToast(`Resend failed: ${err.message}`);
+    }
   };
 
   return (
@@ -552,6 +575,7 @@ export function StaffManagement({
           onSave={handleUpdateStaff}
           onDeactivatePress={() => setDeactivateModalVisible(true)}
           onReactivatePress={() => handleReactivateStaff(selectedStaff)}
+          onResendCredentials={handleResendCredentials}
         />
       )}
 
@@ -1176,6 +1200,7 @@ interface Screen3Props {
   onSave: (updated: StaffMember) => void;
   onDeactivatePress: () => void;
   onReactivatePress: () => void;
+  onResendCredentials?: (staff: StaffMember) => void;
 }
 
 function Screen3StaffDetail({
@@ -1186,6 +1211,7 @@ function Screen3StaffDetail({
   onSave,
   onDeactivatePress,
   onReactivatePress,
+  onResendCredentials,
 }: Screen3Props) {
   // Local edit states
   const [name, setName] = useState(staff.name);
@@ -1567,21 +1593,49 @@ function Screen3StaffDetail({
               </Pressable>
             </View>
           ) : staff.active ? (
-            <Pressable
-              onPress={onDeactivatePress}
-              style={({ pressed }) => [
-                styles.deactivateBtn,
-                pressed && { backgroundColor: DANGER_BG, opacity: 0.8 },
-              ]}
-            >
-              <Ionicons
-                name="person-remove-outline"
-                size={18}
-                color={DANGER}
-                style={{ marginRight: 6 }}
-              />
-              <Text style={styles.deactivateBtnText}>Deactivate Account</Text>
-            </Pressable>
+            <>
+              {staff.email ? (
+                <Pressable
+                  onPress={() => onResendCredentials?.(staff)}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    {
+                      backgroundColor: PRIMARY_LIGHT,
+                      marginBottom: 10,
+                      borderWidth: 1,
+                      borderColor: PRIMARY,
+                    },
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <Ionicons
+                    name="mail-outline"
+                    size={18}
+                    color={PRIMARY}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.primaryButtonText, { color: PRIMARY }]}>
+                    Resend Onboarding Credentials
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              <Pressable
+                onPress={onDeactivatePress}
+                style={({ pressed }) => [
+                  styles.deactivateBtn,
+                  pressed && { backgroundColor: DANGER_BG, opacity: 0.8 },
+                ]}
+              >
+                <Ionicons
+                  name="person-remove-outline"
+                  size={18}
+                  color={DANGER}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.deactivateBtnText}>Deactivate Account</Text>
+              </Pressable>
+            </>
           ) : (
             <Pressable
               onPress={onReactivatePress}

@@ -145,7 +145,7 @@ async function createStaff(req, res) {
     });
 
     const emailResult = await sendEmail({
-      to: email,
+      to: targetEmail,
       subject: emailContent.subject,
       html: emailContent.html,
       text: emailContent.text,
