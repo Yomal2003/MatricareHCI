@@ -19,6 +19,13 @@ const staffSchema = new mongoose.Schema(
     role: {
       type: String,
       required: [true, "Role is required"],
+      set: (val) => {
+        if (!val) return val;
+        const upper = String(val).trim().toUpperCase();
+        if (upper === "NURSING OFFICER") return "NURSING_OFFICER";
+        if (upper === "CLINIC STAFF") return "CLINIC_STAFF";
+        return upper;
+      },
       enum: {
         values: STAFF_ROLES,
         message: "{VALUE} is not a valid staff role",

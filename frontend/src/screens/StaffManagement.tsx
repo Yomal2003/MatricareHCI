@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -10,6 +11,7 @@ import {
   View,
   Platform,
 } from "react-native";
+import { api } from "../api/client";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -65,6 +67,7 @@ export interface StaffMember {
   zone: string;
   phone: string;
   email?: string;
+  username?: string;
   active: boolean;
   dateJoined: string;
   avatarBg: string;
@@ -345,12 +348,50 @@ export function StaffManagement({
 
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Load existing staff from MongoDB backend on mount
+  useEffect(() => {
+    let active = true;
+    api<{ staff: any[] }>("/api/moh/staff")
+      .then((res) => {
+        if (!active || !res?.staff || !Array.isArray(res.staff) || res.staff.length === 0) return;
+        const fromDb: StaffMember[] = res.staff.map((s) => ({
+          id: s.id || s._id,
+          name: s.fullName,
+          role: (s.role === "NURSING_OFFICER" ? "Nursing Officer" : s.role === "CLINIC_STAFF" ? "Clinic Staff" : "PHM") as StaffRole,
+          zone: s.zone,
+          phone: s.phone,
+          email: s.email,
+          username: s.username,
+          active: s.status === "active",
+          dateJoined: s.createdAt ? new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "Recent",
+          avatarBg: "#8B5CF6",
+          activities: [
+            {
+              id: `act-${s.id || s._id}`,
+              icon: "person-add",
+              title: `Account registered as ${s.username}`,
+              time: "Database Active",
+              type: "success",
+            },
+          ],
+        }));
+        setStaffList(fromDb);
+      })
+      .catch((e) => {
+        console.log("Using default demo staff (backend offline):", e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
-    }, 3000);
+    }, 3500);
   };
 
   // Filtered staff list
@@ -378,10 +419,54 @@ export function StaffManagement({
     setCurrentScreen("detail");
   };
 
-  const handleSaveNewStaff = (newStaff: StaffMember) => {
-    setStaffList([newStaff, ...staffList]);
-    setCurrentScreen("list");
-    showToast("Staff member added");
+  const handleSaveNewStaff = async (newStaff: StaffMember) => {
+    setIsSaving(true);
+    try {
+      const backendRole =
+        newStaff.role === "Nursing Officer"
+          ? "NURSING_OFFICER"
+          : newStaff.role === "Clinic Staff"
+          ? "CLINIC_STAFF"
+          : "PHM";
+
+      const res = await api<{
+        id: string;
+        username: string;
+        status: string;
+        emailStatus: string;
+        message: string;
+      }>("/api/moh/staff", {
+        method: "POST",
+        body: {
+          fullName: newStaff.name,
+          role: backendRole,
+          zone: newStaff.zone,
+          phone: newStaff.phone,
+          email: newStaff.email,
+        },
+      });
+
+      const savedMember: StaffMember = {
+        ...newStaff,
+        id: res.id || newStaff.id,
+        username: res.username,
+      };
+
+      setStaffList((prev) => [savedMember, ...prev]);
+      setCurrentScreen("list");
+      showToast(
+        res.emailStatus === "sent"
+          ? `Saved to database! Username: ${res.username} (Credentials emailed)`
+          : `Saved to database! Username: ${res.username}`
+      );
+    } catch (err: any) {
+      console.warn("Failed to save to database via API:", err.message);
+      setStaffList((prev) => [newStaff, ...prev]);
+      setCurrentScreen("list");
+      showToast(`Saved locally (DB: ${err.message || "Failed to reach server"})`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleUpdateStaff = (updatedStaff: StaffMember) => {
@@ -451,6 +536,7 @@ export function StaffManagement({
         <Screen2AddStaff
           onBack={() => setCurrentScreen("list")}
           onSave={handleSaveNewStaff}
+          isSaving={isSaving}
         />
       )}
 
@@ -802,9 +888,10 @@ function Screen1StaffList({
 interface Screen2Props {
   onBack: () => void;
   onSave: (newStaff: StaffMember) => void;
+  isSaving?: boolean;
 }
 
-function Screen2AddStaff({ onBack, onSave }: Screen2Props) {
+function Screen2AddStaff({ onBack, onSave, isSaving = false }: Screen2Props) {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<StaffRole>("PHM");
   const [zone, setZone] = useState<string>("Buttala");
@@ -1052,18 +1139,26 @@ function Screen2AddStaff({ onBack, onSave }: Screen2Props) {
         {/* Primary Save Button */}
         <Pressable
           onPress={validateAndSubmit}
+          disabled={isSaving}
           style={({ pressed }) => [
             styles.primaryButton,
+            isSaving && { opacity: 0.7 },
             pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
           ]}
         >
-          <Ionicons
-            name="checkmark-circle"
-            size={20}
-            color="#FFFFFF"
-            style={{ marginRight: 8 }}
-          />
-          <Text style={styles.primaryButtonText}>Save Staff Member</Text>
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+          ) : (
+            <Ionicons
+              name="checkmark-circle"
+              size={20}
+              color="#FFFFFF"
+              style={{ marginRight: 8 }}
+            />
+          )}
+          <Text style={styles.primaryButtonText}>
+            {isSaving ? "Saving to Database..." : "Save Staff Member"}
+          </Text>
         </Pressable>
       </ScrollView>
     </View>

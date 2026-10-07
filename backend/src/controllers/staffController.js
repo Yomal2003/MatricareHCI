@@ -31,6 +31,13 @@ const validateStaffInput = [
     .trim()
     .notEmpty()
     .withMessage("Role is required")
+    .customSanitizer((val) => {
+      if (!val) return val;
+      const upper = String(val).trim().toUpperCase();
+      if (upper === "NURSING OFFICER" || upper === "NURSING_OFFICER") return "NURSING_OFFICER";
+      if (upper === "CLINIC STAFF" || upper === "CLINIC_STAFF") return "CLINIC_STAFF";
+      return upper;
+    })
     .isIn(STAFF_ROLES)
     .withMessage(`Role must be one of: ${STAFF_ROLES.join(", ")}`),
 
@@ -49,9 +56,8 @@ const validateStaffInput = [
     .withMessage("Please provide a valid phone number (e.g. +94 77 123 4567)"),
 
   body("email")
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty()
-    .withMessage("Email is required")
     .isEmail()
     .withMessage("Please provide a valid email address")
     .normalizeEmail(),
@@ -90,17 +96,20 @@ async function createStaff(req, res) {
   const { fullName, role, zone, phone, email } = req.body;
 
   try {
+    // 3. Atomically generate unique username based on role prefix
+    const username = await generateUsername(role);
+
+    // Fallback email if omitted
+    const targetEmail = email && email.trim() ? email.trim().toLowerCase() : `${username.toLowerCase()}@matricare.health.gov.lk`;
+
     // 2. Check if email is already in use
-    const emailExists = await Staff.findOne({ email });
+    const emailExists = await Staff.findOne({ email: targetEmail });
     if (emailExists) {
       return res.status(409).json({
         error: "Conflict",
-        message: `A staff member with email '${email}' is already registered.`,
+        message: `A staff member with email '${targetEmail}' is already registered.`,
       });
     }
-
-    // 3. Atomically generate unique username based on role prefix
-    const username = await generateUsername(role);
 
     // 4. Generate random 8-10 char temporary password
     const temporaryPassword = generateTemporaryPassword(10);
@@ -115,7 +124,7 @@ async function createStaff(req, res) {
       role,
       zone,
       phone,
-      email,
+      email: targetEmail,
       username,
       passwordHash,
       mustResetPassword: true,
