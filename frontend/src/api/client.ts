@@ -34,7 +34,7 @@ export async function api<T = any>(
 ): Promise<T> {
   const url = `${getApiBaseUrl()}${path}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 3500);
+  const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15000);
 
   try {
     const res = await fetch(url, {
@@ -48,7 +48,13 @@ export async function api<T = any>(
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(`${res.status} ${errData.error || ""}`);
+      const message =
+        errData.message ||
+        (errData.details && errData.details[0]?.message) ||
+        errData.error ||
+        res.statusText ||
+        "Request failed";
+      throw new Error(`${res.status}: ${message}`);
     }
     return res.json();
   } finally {
