@@ -10,6 +10,7 @@ export type Screen =
   | "mother-records"
   | "mother-consent"
   | "phm-home"
+  | "phm-profile"
   | "phm-followups"
   | "phm-search"
   | "phm-entry"

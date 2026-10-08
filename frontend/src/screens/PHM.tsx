@@ -45,6 +45,66 @@ type AppointmentRecord = {
   } | null;
 };
 
+type EntryKind = "anc" | "vaccination" | "growth";
+type EntryForm = {
+  motherId: string;
+  gestationWeeks: string;
+  weight: string;
+  bp: string;
+  hb: string;
+  fetalPosition: string;
+  vaccine: string;
+  lotNumber: string;
+  expiryDate: string;
+  vaccineNotes: string;
+  childAgeMonths: string;
+  height: string;
+  headCircumference: string;
+  muac: string;
+  notes: string;
+};
+type PendingRecord = {
+  localId?: string;
+  type?: string;
+  recordCategory?: EntryKind;
+  visitType?: string;
+  motherId?: string;
+  motherName?: string;
+  vaccine?: string;
+  createdAt?: string;
+  [key: string]: unknown;
+};
+
+const createEntryForm = (): EntryForm => ({
+  motherId: "",
+  gestationWeeks: "",
+  weight: "",
+  bp: "",
+  hb: "",
+  fetalPosition: "",
+  vaccine: "",
+  lotNumber: "",
+  expiryDate: "",
+  vaccineNotes: "",
+  childAgeMonths: "",
+  height: "",
+  headCircumference: "",
+  muac: "",
+  notes: "",
+});
+
+const ENTRY_TABS: { id: EntryKind; label: string }[] = [
+  { id: "anc", label: "ANC Visit" },
+  { id: "vaccination", label: "Vaccination" },
+  { id: "growth", label: "Growth" },
+];
+
+const isSyncSupported = (item: PendingRecord) =>
+  item.recordCategory !== "vaccination" &&
+  item.recordCategory !== "growth" &&
+  item.type !== "immunization" &&
+  item.type !== "growth";
+
 const FOLLOWUP_FALLBACK: FollowupItem[] = [
   { id: "M-1043", name: "Priyanka Dissanayake", details: "29 wks ANC · G2", village: "Hella", risk: "high", status: "overdue", dueLabel: "Overdue 14d" },
   { id: "M-1044", name: "Vindya Kumari", details: "35 wks ANC · G1", village: "Gofagala", risk: "medium", status: "overdue", dueLabel: "Overdue 7d" },
@@ -92,6 +152,7 @@ export function PHMHome() {
       title={user?.name?.split(" ")[0] || "Kamani"}
       headerBadge="Monaragala Division · PHM"
       headerLeadingIcon="menu"
+      headerPressTo="phm-profile"
     >
       <View style={homeStyles.content}>
         <View style={homeStyles.overviewHeader}>
@@ -228,6 +289,53 @@ const homeStyles = StyleSheet.create({
   actionButton: { flex: 1, minHeight: 46, paddingHorizontal: 8, borderRadius: 12 },
   secondaryAction: { borderWidth: 1.5 },
   pressed: { opacity: 0.75 },
+});
+
+export function PHMProfile() {
+  const { user } = useApp();
+  const p = usePalette();
+  const details = [
+    { icon: "person-outline" as const, label: "Name", value: user?.name || "Kamani Rathnayake" },
+    { icon: "ribbon-outline" as const, label: "Role", value: "PHM" },
+    { icon: "location-outline" as const, label: "PHM Division", value: "Monaragala Division" },
+    { icon: "id-card-outline" as const, label: "PHM ID", value: "PHM001" },
+    { icon: "call-outline" as const, label: "Contact Number", value: "Not provided" },
+  ];
+
+  return (
+    <Shell title="Profile Details" headerBadge={null} headerLeadingIcon="chevron-back" headerBackTo="phm-home">
+      <Card style={profileStyles.card}>
+        <View style={[profileStyles.avatar, { backgroundColor: p.colorLight }]}>
+          <Ionicons name="person" size={28} color={p.colorDark} />
+        </View>
+        <Text style={profileStyles.name}>{user?.name || "Kamani Rathnayake"}</Text>
+        <Text style={[profileStyles.role, { color: p.colorDark }]}>PHM · Monaragala Division</Text>
+      </Card>
+
+      <Card style={profileStyles.detailsCard}>
+        {details.map((detail, index) => (
+          <React.Fragment key={detail.label}>
+            {index > 0 && <View style={profileStyles.separator} />}
+            <Row
+              icon={detail.icon}
+              title={detail.label}
+              sub={detail.value}
+              iconTone={p.colorDark}
+            />
+          </React.Fragment>
+        ))}
+      </Card>
+    </Shell>
+  );
+}
+
+const profileStyles = StyleSheet.create({
+  card: { alignItems: "center", paddingVertical: 22 },
+  avatar: { width: 64, height: 64, alignItems: "center", justifyContent: "center", borderRadius: 32 },
+  name: { marginTop: 10, color: C.ink, fontSize: 18, fontWeight: "800" },
+  role: { marginTop: 4, fontSize: 11, fontWeight: "700" },
+  detailsCard: { paddingHorizontal: 14, paddingVertical: 4, borderRadius: 16 },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.line },
 });
 
 export function PHMFollowups() {
@@ -439,13 +547,16 @@ export function PHMSearch() {
 }
 
 export function PHMEntry() {
-  const { language, refreshPending, isOnline } = useApp();
+  const { navigate, refreshPending } = useApp();
   const p = usePalette();
   const mothers = useMothers();
-  const [f, setF] = useState({ motherId: "", gestationWeeks: "", weight: "", bp: "", hb: "", fetalPosition: "", notes: "" });
+  const [f, setF] = useState<EntryForm>(createEntryForm);
+  const [kind, setKind] = useState<EntryKind>("anc");
   const [risk, setRisk] = useState<string[]>([]);
   const [motherPickerOpen, setMotherPickerOpen] = useState(false);
   const [riskOptionsOpen, setRiskOptionsOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<{ kind: EntryKind; motherName: string } | null>(null);
   const FLAGS = ["High BP", "Bleeding", "Swelling", "Low Hb", "Reduced movements"];
   const selectedMother = mothers.find((mother) => mother.id === f.motherId);
 
@@ -455,16 +566,125 @@ export function PHMEntry() {
     }
   }, [f.motherId, mothers, selectedMother]);
 
-  const save = async () => {
-    if (!f.motherId) return Alert.alert("Mother ID required");
-    await queueRecord({ type: "home-visit", ...f, risk });
-    refreshPending();
-    if (isOnline) flushPending().then(refreshPending).catch(() => {});
-    Alert.alert("Saved", isOnline ? "Uploaded to server" : "Saved offline — will sync later");
-    setF({ motherId: "", gestationWeeks: "", weight: "", bp: "", hb: "", fetalPosition: "", notes: "" }); setRisk([]);
+  const update = (key: keyof EntryForm, value: string) => {
+    setF((current) => ({ ...current, [key]: value }));
   };
+
+  const save = async () => {
+    if (!selectedMother) {
+      Alert.alert("Mother required", "Select a mother before saving this record.");
+      return;
+    }
+    if (kind === "vaccination" && !f.vaccine.trim()) {
+      Alert.alert("Vaccine required", "Enter a vaccine name before saving.");
+      return;
+    }
+    if (kind === "growth" && ![f.weight, f.height, f.headCircumference, f.muac].some((value) => value.trim())) {
+      Alert.alert("Growth measurement required", "Enter at least one growth measurement before saving.");
+      return;
+    }
+
+    const shared = {
+      recordCategory: kind,
+      motherId: selectedMother.id,
+      motherName: selectedMother.name,
+      notes: f.notes,
+      risk,
+    };
+    const record: Record<string, unknown> = kind === "anc"
+      ? {
+          ...shared,
+          type: "home-visit",
+          visitType: "anc",
+          gestationWeeks: f.gestationWeeks,
+          weight: f.weight,
+          bp: f.bp,
+          hb: f.hb,
+          fetalPosition: f.fetalPosition,
+        }
+      : kind === "vaccination"
+        ? {
+            ...shared,
+            type: "immunization",
+            vaccine: f.vaccine.trim(),
+            batch: f.lotNumber,
+            expiryDate: f.expiryDate,
+            vaccineNotes: f.vaccineNotes,
+          }
+        : {
+            ...shared,
+            type: "growth",
+            childAgeMonths: f.childAgeMonths,
+            weight: f.weight,
+            height: f.height,
+            headCircumference: f.headCircumference,
+            muac: f.muac,
+          };
+
+    setSaving(true);
+    try {
+      await queueRecord(record);
+      refreshPending();
+      setSaved({ kind, motherName: selectedMother.name });
+    } catch (error) {
+      Alert.alert("Save failed", error instanceof Error ? error.message : "The record could not be saved on this device.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const newEntry = () => {
+    setF(createEntryForm());
+    setRisk([]);
+    setRiskOptionsOpen(false);
+    setMotherPickerOpen(false);
+    setKind("anc");
+    setSaved(null);
+    navigate("phm-entry");
+  };
+
   return (
-    <Shell title="Record Visit" headerBadge={null} headerLeadingIcon="chevron-back" headerBackTo="phm-home">
+    <Shell title="Record Visit" headerBadge={null} headerLeadingIcon="chevron-back" headerBackTo="phm-home" mobileWebFrame={!!saved} fillContent={!!saved}>
+      {saved ? (
+        <View style={entryStyles.success}>
+          <View style={entryStyles.successIcon}>
+            <Ionicons name="checkmark" size={34} color={p.colorDark} />
+          </View>
+          <Text style={entryStyles.successTitle}>Saved Successfully</Text>
+          <Text style={entryStyles.successSubtitle}>{saved.motherName} · {ENTRY_TABS.find((tab) => tab.id === saved.kind)?.label}</Text>
+          <Text style={entryStyles.successNote}>
+            {saved.kind === "anc"
+              ? "Saved on this device and ready to sync."
+              : `${saved.kind === "vaccination" ? "Vaccination" : "Growth"} record saved locally. Sync requires backend support for this record type.`}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={newEntry}
+            style={({ pressed }) => [entryStyles.saveButton, { backgroundColor: p.color, marginTop: 20 }, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="add" size={17} color="#fff" />
+            <Text style={entryStyles.saveText}>New Entry</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <>
+          <View style={entryStyles.tabs} accessibilityRole="tablist">
+            {ENTRY_TABS.map((tab) => {
+              const selected = kind === tab.id;
+              return (
+                <Pressable
+                  key={tab.id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  onPress={() => setKind(tab.id)}
+                  style={[entryStyles.tab, selected && { backgroundColor: "#fff" }]}
+                >
+                  <Text style={[entryStyles.tabText, selected && { color: p.colorDark, fontWeight: "800" }]}>{tab.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Select mother"
@@ -505,97 +725,111 @@ export function PHMEntry() {
         </View>
       )}
 
-      <EntryField
-        label="GESTATION (WEEKS)"
-        value={f.gestationWeeks}
-        onChangeText={(gestationWeeks) => setF({ ...f, gestationWeeks })}
-        placeholder="e.g. 28"
-        unit="wks"
-        keyboardType="number-pad"
-      />
-      <EntryField
-        label="WEIGHT (KG)"
-        value={f.weight}
-        onChangeText={(weight) => setF({ ...f, weight })}
-        placeholder="e.g. 62.5"
-        unit="kg"
-        keyboardType="decimal-pad"
-      />
-      <EntryField
-        label="BLOOD PRESSURE"
-        value={f.bp}
-        onChangeText={(bp) => setF({ ...f, bp })}
-        placeholder="e.g. 120/80"
-        unit="mmHg"
-        keyboardType="decimal-pad"
-      />
-      <EntryField
-        label="HB LEVEL (G/DL)"
-        value={f.hb}
-        onChangeText={(hb) => setF({ ...f, hb })}
-        placeholder="e.g. 11.5"
-        unit="g/dL"
-        keyboardType="decimal-pad"
-      />
-      <EntryField
-        label="FETAL POSITION"
-        value={f.fetalPosition}
-        onChangeText={(fetalPosition) => setF({ ...f, fetalPosition })}
-        placeholder="e.g. Cephalic"
-      />
-      <View style={entryStyles.fieldWrap}>
-        <Text style={entryStyles.label}>CLINICAL NOTES</Text>
-        <TextInput
-          accessibilityLabel="Clinical notes"
-          value={f.notes}
-          onChangeText={(notes) => setF({ ...f, notes })}
-          placeholder="Any clinical issues, referrals..."
-          placeholderTextColor="#A0B0AC"
-          multiline
-          textAlignVertical="top"
-          style={[entryStyles.input, entryStyles.notesInput]}
-        />
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: riskOptionsOpen }}
-        onPress={() => setRiskOptionsOpen((open) => !open)}
-        style={entryStyles.riskToggle}
-      >
-        <View style={entryStyles.riskToggleLabel}>
-          <Ionicons name="alert-circle-outline" size={15} color={risk.length ? C.danger : "#81918C"} />
-          <Text style={entryStyles.riskToggleText}>
-            {risk.length ? `Danger signs · ${risk.length} selected` : "Add danger signs (optional)"}
-          </Text>
-        </View>
-        <Ionicons name={riskOptionsOpen ? "chevron-up" : "chevron-down"} size={15} color="#81918C" />
-      </Pressable>
-      {riskOptionsOpen && (
-        <View style={entryStyles.riskOptions}>
-          {FLAGS.map((flag) => {
-            const selected = risk.includes(flag);
-            return (
+          {kind === "anc" && (
+            <>
+              <EntryField label="GESTATION (WEEKS)" value={f.gestationWeeks} onChangeText={(value) => update("gestationWeeks", value)} placeholder="e.g. 28" unit="wks" keyboardType="number-pad" />
+              <EntryField label="WEIGHT (KG)" value={f.weight} onChangeText={(value) => update("weight", value)} placeholder="e.g. 62.5" unit="kg" keyboardType="decimal-pad" />
+              <EntryField label="BLOOD PRESSURE" value={f.bp} onChangeText={(value) => update("bp", value)} placeholder="e.g. 120/80" unit="mmHg" />
+              <EntryField label="HB LEVEL (G/DL)" value={f.hb} onChangeText={(value) => update("hb", value)} placeholder="e.g. 11.5" unit="g/dL" keyboardType="decimal-pad" />
+              <EntryField label="FETAL POSITION" value={f.fetalPosition} onChangeText={(value) => update("fetalPosition", value)} placeholder="e.g. Cephalic" />
+            </>
+          )}
+          {kind === "vaccination" && (
+            <>
+              <EntryField label="VACCINE NAME" value={f.vaccine} onChangeText={(value) => update("vaccine", value)} placeholder="e.g. TT2" />
+              <EntryField label="LOT NUMBER" value={f.lotNumber} onChangeText={(value) => update("lotNumber", value)} placeholder="e.g. LOT2024-A" />
+              <EntryField label="EXPIRY DATE" value={f.expiryDate} onChangeText={(value) => update("expiryDate", value)} placeholder="YYYY-MM-DD" />
+              <EntryField label="NOTES" value={f.vaccineNotes} onChangeText={(value) => update("vaccineNotes", value)} placeholder="Reactions, notes..." />
+            </>
+          )}
+          {kind === "growth" && (
+            <>
+              <EntryField label="CHILD AGE (MONTHS)" value={f.childAgeMonths} onChangeText={(value) => update("childAgeMonths", value)} placeholder="e.g. 6" unit="mths" keyboardType="number-pad" />
+              <EntryField label="WEIGHT (KG)" value={f.weight} onChangeText={(value) => update("weight", value)} placeholder="e.g. 7.5" unit="kg" keyboardType="decimal-pad" />
+              <EntryField label="HEIGHT (CM)" value={f.height} onChangeText={(value) => update("height", value)} placeholder="e.g. 67" unit="cm" keyboardType="decimal-pad" />
+              <EntryField label="HEAD CIRCUMFERENCE (CM)" value={f.headCircumference} onChangeText={(value) => update("headCircumference", value)} placeholder="e.g. 43" unit="cm" keyboardType="decimal-pad" />
+              <EntryField label="MUAC (CM)" value={f.muac} onChangeText={(value) => update("muac", value)} placeholder="e.g. 14.5" unit="cm" keyboardType="decimal-pad" />
+            </>
+          )}
+
+          {kind !== "vaccination" && (
+            <View style={entryStyles.fieldWrap}>
+              <Text style={entryStyles.label}>CLINICAL NOTES</Text>
+              <TextInput
+                accessibilityLabel="Clinical notes"
+                value={f.notes}
+                onChangeText={(value) => update("notes", value)}
+                placeholder="Any clinical issues, referrals..."
+                placeholderTextColor="#A0B0AC"
+                multiline
+                textAlignVertical="top"
+                style={[entryStyles.input, entryStyles.notesInput]}
+              />
+            </View>
+          )}
+          {kind === "vaccination" && (
+            <View style={entryStyles.fieldWrap}>
+              <Text style={entryStyles.label}>CLINICAL NOTES</Text>
+              <TextInput
+                accessibilityLabel="Clinical notes"
+                value={f.notes}
+                onChangeText={(value) => update("notes", value)}
+                placeholder="Any clinical issues, referrals..."
+                placeholderTextColor="#A0B0AC"
+                multiline
+                textAlignVertical="top"
+                style={[entryStyles.input, entryStyles.notesInput]}
+              />
+            </View>
+          )}
+
+          {kind === "anc" && (
+            <>
               <Pressable
-                key={flag}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: selected }}
-                onPress={() => setRisk((current) => selected ? current.filter((item) => item !== flag) : [...current, flag])}
-                style={[entryStyles.riskOption, selected && entryStyles.riskOptionSelected]}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: riskOptionsOpen }}
+                onPress={() => setRiskOptionsOpen((open) => !open)}
+                style={entryStyles.riskToggle}
               >
-                <Text style={[entryStyles.riskOptionText, selected && entryStyles.riskOptionTextSelected]}>{flag}</Text>
+                <View style={entryStyles.riskToggleLabel}>
+                  <Ionicons name="alert-circle-outline" size={15} color={risk.length ? C.danger : "#81918C"} />
+                  <Text style={entryStyles.riskToggleText}>{risk.length ? `Danger signs · ${risk.length} selected` : "Add danger signs (optional)"}</Text>
+                </View>
+                <Ionicons name={riskOptionsOpen ? "chevron-up" : "chevron-down"} size={15} color="#81918C" />
               </Pressable>
-            );
-          })}
-        </View>
+              {riskOptionsOpen && (
+                <View style={entryStyles.riskOptions}>
+                  {FLAGS.map((flag) => {
+                    const selected = risk.includes(flag);
+                    return (
+                      <Pressable
+                        key={flag}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selected }}
+                        onPress={() => setRisk((current) => selected ? current.filter((item) => item !== flag) : [...current, flag])}
+                        style={[entryStyles.riskOption, selected && entryStyles.riskOptionSelected]}
+                      >
+                        <Text style={[entryStyles.riskOptionText, selected && entryStyles.riskOptionTextSelected]}>{flag}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </>
+          )}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: saving }}
+            disabled={saving}
+            onPress={save}
+            style={({ pressed }) => [entryStyles.saveButton, { backgroundColor: p.color }, (pressed || saving) && { opacity: 0.75 }]}
+          >
+            {saving ? <Ionicons name="hourglass-outline" size={16} color="#fff" /> : <Ionicons name="save-outline" size={16} color="#fff" />}
+            <Text style={entryStyles.saveText}>{saving ? "Saving..." : "Save Record"}</Text>
+          </Pressable>
+        </>
       )}
-      <Pressable
-        accessibilityRole="button"
-        onPress={save}
-        style={({ pressed }) => [entryStyles.saveButton, { backgroundColor: p.color }, pressed && { opacity: 0.85 }]}
-      >
-        <Ionicons name="save-outline" size={16} color="#fff" />
-        <Text style={entryStyles.saveText}>Save Record</Text>
-      </Pressable>
     </Shell>
   );
 }
@@ -635,6 +869,9 @@ function EntryField({
 }
 
 const entryStyles = StyleSheet.create({
+  tabs: { minHeight: 34, flexDirection: "row", padding: 3, marginBottom: 11, borderRadius: 999, backgroundColor: "#E5E9EB" },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderRadius: 999 },
+  tabText: { color: "#718087", fontSize: 9, fontWeight: "600" },
   motherSelector: { minHeight: 38, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 9, borderRadius: 11, borderWidth: 1, borderColor: "#E3ECEA", backgroundColor: "#fff" },
   motherIcon: { width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: "#059669" },
   motherCopy: { flex: 1, minWidth: 0 },
@@ -659,33 +896,172 @@ const entryStyles = StyleSheet.create({
   riskOptionTextSelected: { color: "#B42318" },
   saveButton: { minHeight: 38, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 10, shadowColor: "#0F2A2E", shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   saveText: { color: "#fff", fontSize: 11, fontWeight: "800" },
+  success: { flexGrow: 1, alignItems: "center", paddingHorizontal: 18, paddingTop: 2 },
+  successIcon: { width: 58, height: 58, alignItems: "center", justifyContent: "center", marginBottom: 12, borderRadius: 13, backgroundColor: "#D1FAE5" },
+  successTitle: { color: "#173B35", fontSize: 14, fontWeight: "800", textAlign: "center" },
+  successSubtitle: { marginTop: 5, color: "#71827D", fontSize: 9, textAlign: "center" },
+  successNote: { maxWidth: 230, marginTop: 6, color: "#81918C", fontSize: 9, lineHeight: 13, textAlign: "center" },
 });
 
 export function PHMSync() {
-  const { language, isOnline, refreshPending } = useApp();
-  const t = T[language];
-  const [items, setItems] = useState<any[]>([]);
+  const { isOnline, refreshPending } = useApp();
+  const [items, setItems] = useState<PendingRecord[]>([]);
   const [busy, setBusy] = useState(false);
-  const load = () => getPending().then(setItems);
-  useEffect(() => { load(); }, []);
+  const [lastSync, setLastSync] = useState("—");
+  const load = () => getPending().then((pendingItems) => {
+    setItems(pendingItems);
+    refreshPending();
+  }).catch((error) => {
+    Alert.alert("Unable to load sync queue", error instanceof Error ? error.message : "The local queue could not be read.");
+  });
+  useEffect(() => { void load(); }, [refreshPending]);
+  const unsupported = items.filter((item) => !isSyncSupported(item));
+  const syncable = items.length - unsupported.length;
+  const today = new Date().toDateString();
+  const savedToday = items.filter((item) => item.createdAt && new Date(item.createdAt).toDateString() === today).length;
+
   const sync = async () => {
+    if (!isOnline) {
+      Alert.alert("You are offline", "Reconnect before syncing records.");
+      return;
+    }
+    if (unsupported.length) {
+      Alert.alert(
+        "Some records need backend support",
+        "Vaccination and Growth entries are safely saved on this device, but the current PHM sync endpoint cannot accept them. They will remain queued.",
+      );
+      return;
+    }
+    if (!syncable) return;
+
     setBusy(true);
-    try { const n = await flushPending(); Alert.alert(t.syncDone, `${n} records uploaded`); }
-    catch (e: any) { Alert.alert("Sync failed", e.message); }
-    setBusy(false); load(); refreshPending();
+    try {
+      const count = await flushPending();
+      setLastSync("Just now");
+      Alert.alert("Sync request completed", `${count} queued records were submitted.`);
+      await load();
+      refreshPending();
+    } catch (error) {
+      Alert.alert("Sync failed", error instanceof Error ? error.message : "The records could not be synced.");
+    } finally {
+      setBusy(false);
+    }
   };
+
   return (
-    <Shell title={t.syncStatus}>
-      <Card label="SYNC STATUS" style={{ alignItems: "center" }}>
-        <Ionicons name={items.length ? "cloud-upload" : "cloud-done"} size={48} color={items.length ? "#D97706" : "#059669"} />
-        <Text style={[s.h1, { marginTop: 8 }]}>{items.length}</Text>
-        <Text style={s.muted}>{items.length ? t.pendingRecords : t.syncDone}</Text>
-      </Card>
-      <Card label="PENDING LIST">
-        {items.length ? items.map((r) => <Row key={r.localId} icon="document" title={`${r.type} · ${r.motherId}`} sub={new Date(r.createdAt).toLocaleString()} right={<Chip text="local" tone="warn" />} />)
-          : <Text style={s.muted}>Nothing waiting.</Text>}
-      </Card>
-      <Button title={busy ? t.syncing : "Sync now"} icon="sync" onPress={sync} style={!isOnline ? { opacity: 0.5 } : undefined} />
+    <Shell title="Sync Status" headerBadge={null} headerLeadingIcon="chevron-back" headerBackTo="phm-entry">
+      <View style={[syncStyles.connection, { backgroundColor: isOnline ? "#E8FBF2" : "#FFF5E6" }]}>
+        <View style={[syncStyles.connectionIcon, { backgroundColor: isOnline ? "#D1FAE5" : "#FEF3C7" }]}>
+          <Ionicons name={isOnline ? "checkmark" : "cloud-offline-outline"} size={17} color={isOnline ? "#047857" : "#A35B00"} />
+        </View>
+        <View style={syncStyles.connectionCopy}>
+          <Text style={syncStyles.connectionTitle}>{isOnline ? "Connected" : "Offline"}</Text>
+          <Text style={syncStyles.connectionSub}>
+            {items.length ? `${items.length} ${items.length === 1 ? "record" : "records"} pending upload` : "No records waiting to upload"}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: busy || !isOnline || !syncable || unsupported.length > 0 }}
+          disabled={busy || !isOnline || !syncable || unsupported.length > 0}
+          onPress={sync}
+          style={({ pressed }) => [
+            syncStyles.syncButton,
+            { backgroundColor: isOnline && syncable && !unsupported.length ? "#059669" : "#A9B9B3" },
+            pressed && { opacity: 0.8 },
+          ]}
+        >
+          <Text style={syncStyles.syncButtonText}>{busy ? "Syncing..." : "Sync Now"}</Text>
+        </Pressable>
+      </View>
+
+      {unsupported.length > 0 && (
+        <View style={syncStyles.warning}>
+          <Ionicons name="information-circle-outline" size={16} color="#946200" />
+          <Text style={syncStyles.warningText}>
+            {unsupported.length} {unsupported.length === 1 ? "Vaccination/Growth record is" : "Vaccination/Growth records are"} held safely on this device. The current PHM endpoint does not support syncing these record types.
+          </Text>
+        </View>
+      )}
+
+      <View style={syncStyles.metrics}>
+        <SyncMetric value={items.length} label="Pending" tone="#D97706" />
+        <SyncMetric value={syncable} label="Ready to sync" tone="#059669" />
+        <SyncMetric value={lastSync} label="Last sync" tone="#7666E8" />
+      </View>
+
+      <View style={syncStyles.listHeading}>
+        <Text style={syncStyles.listTitle}>PENDING UPLOAD</Text>
+        <Text style={syncStyles.listCount}>{items.length}</Text>
+      </View>
+      {items.length ? items.map((item, index) => {
+        const category = item.recordCategory ?? (item.type === "immunization" ? "vaccination" : item.type === "growth" ? "growth" : "anc");
+        const kindLabel = category === "vaccination" ? "Vaccination" : category === "growth" ? "Growth Entry" : "ANC Visit";
+        const title = item.motherName || item.motherId || "Visit record";
+        const subtitle = [kindLabel, item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ""].filter(Boolean).join(" · ");
+        const supported = isSyncSupported(item);
+        return (
+          <View key={item.localId ?? `${title}-${index}`} style={syncStyles.pendingRow}>
+            <View style={syncStyles.fileIcon}>
+              <Ionicons name="document-text" size={15} color="#C28A19" />
+            </View>
+            <View style={syncStyles.pendingCopy}>
+              <Text numberOfLines={1} style={syncStyles.pendingName}>{title}</Text>
+              <Text numberOfLines={1} style={syncStyles.pendingSub}>{subtitle}</Text>
+            </View>
+            <View style={[syncStyles.pendingBadge, { backgroundColor: supported ? "#E6F7EF" : "#FFF4D6" }]}>
+              <Text style={[syncStyles.pendingBadgeText, { color: supported ? "#16805D" : "#946200" }]}>
+                {supported ? "Ready" : "Local only"}
+              </Text>
+            </View>
+          </View>
+        );
+      }) : (
+        <View style={syncStyles.empty}>
+          <View style={syncStyles.emptyIcon}><Ionicons name="cloud-done-outline" size={22} color="#059669" /></View>
+          <Text style={syncStyles.emptyTitle}>Everything is up to date</Text>
+          <Text style={syncStyles.emptySub}>{savedToday ? `${savedToday} record${savedToday === 1 ? "" : "s"} saved today` : "New records will appear here until synced."}</Text>
+        </View>
+      )}
     </Shell>
   );
 }
+
+function SyncMetric({ value, label, tone }: { value: number | string; label: string; tone: string }) {
+  return (
+    <View style={syncStyles.metric}>
+      <Text style={[syncStyles.metricValue, { color: tone }]}>{value}</Text>
+      <Text numberOfLines={1} style={syncStyles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+const syncStyles = StyleSheet.create({
+  connection: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10, borderRadius: 12, borderWidth: 1, borderColor: "#DCEFE6" },
+  connectionIcon: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderRadius: 10 },
+  connectionCopy: { flex: 1, minWidth: 0 },
+  connectionTitle: { color: "#173B35", fontSize: 11, fontWeight: "800" },
+  connectionSub: { marginTop: 2, color: "#82918C", fontSize: 8 },
+  syncButton: { minHeight: 29, minWidth: 58, alignItems: "center", justifyContent: "center", paddingHorizontal: 9, borderRadius: 9 },
+  syncButtonText: { color: "#fff", fontSize: 9, fontWeight: "800" },
+  warning: { flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 9, marginBottom: 10, borderRadius: 10, backgroundColor: "#FFF8E7" },
+  warningText: { flex: 1, color: "#795B19", fontSize: 9, lineHeight: 13 },
+  metrics: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  metric: { flex: 1, minWidth: 0, minHeight: 48, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderRadius: 10, backgroundColor: "#fff", shadowColor: "#183B32", shadowOpacity: 0.05, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  metricValue: { fontSize: 14, fontWeight: "800" },
+  metricLabel: { marginTop: 3, color: "#8A9994", fontSize: 8 },
+  listHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  listTitle: { color: "#71827D", fontSize: 9, fontWeight: "800", letterSpacing: 0.45 },
+  listCount: { color: "#81918C", fontSize: 9, fontWeight: "700" },
+  pendingRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 9, paddingVertical: 7, marginBottom: 6, borderRadius: 10, borderWidth: 1, borderColor: "#EDF1EF", backgroundColor: "#fff" },
+  fileIcon: { width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: "#FFF4D6" },
+  pendingCopy: { flex: 1, minWidth: 0 },
+  pendingName: { color: "#244139", fontSize: 9, fontWeight: "700" },
+  pendingSub: { marginTop: 2, color: "#91A09B", fontSize: 8 },
+  pendingBadge: { paddingHorizontal: 6, paddingVertical: 4, borderRadius: 999 },
+  pendingBadgeText: { fontSize: 7, fontWeight: "700" },
+  empty: { alignItems: "center", paddingVertical: 30, paddingHorizontal: 12 },
+  emptyIcon: { width: 46, height: 46, alignItems: "center", justifyContent: "center", marginBottom: 9, borderRadius: 15, backgroundColor: "#D1FAE5" },
+  emptyTitle: { color: "#244139", fontSize: 12, fontWeight: "800" },
+  emptySub: { marginTop: 4, color: "#81918C", fontSize: 9, textAlign: "center" },
+});

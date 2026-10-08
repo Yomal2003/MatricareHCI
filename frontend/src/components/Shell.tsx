@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, Pattern, Rect } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,20 +19,28 @@ export default function Shell({
   headerBadge,
   headerLeadingIcon,
   headerBackTo,
+  headerPressTo,
+  mobileWebFrame = false,
+  fillContent = false,
 }: {
   title: string;
   children: React.ReactNode;
   headerBadge?: string | null;
   headerLeadingIcon?: keyof typeof Ionicons.glyphMap;
   headerBackTo?: Screen;
+  headerPressTo?: Screen;
+  mobileWebFrame?: boolean;
+  fillContent?: boolean;
 }) {
   const { role, language, isOnline, isSyncing, currentScreen, navigate, wireframeMode, toggleOnline, pending } = useApp();
   const p = usePalette();
   const cfg = ROLE_CONFIG[role!];
   const t = T[language];
+  const webFrame = mobileWebFrame && Platform.OS === "web";
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.wf ? "#F2F2F2" : p.colorBg }}>
+    <View style={webFrame ? st.webFrame : st.root}>
+      <View style={[st.app, { backgroundColor: p.wf ? "#F2F2F2" : p.colorBg }, webFrame && st.webApp]}>
       {/* Top bar */}
       <SafeAreaView edges={["top"]} style={{ backgroundColor: p.color }}>
         {wireframeMode && <WfLabel text="TOP BAR" />}
@@ -47,6 +55,25 @@ export default function Shell({
             >
               <Ionicons name={headerLeadingIcon ?? "chevron-back"} size={20} color="#fff" />
             </Pressable>
+          ) : headerPressTo ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${title} profile details`}
+              onPress={() => navigate(headerPressTo)}
+              hitSlop={6}
+              style={({ pressed }) => [st.headerProfile, pressed && st.headerProfilePressed]}
+            >
+              <View style={st.avatar}>
+                {headerLeadingIcon
+                  ? <Ionicons name={headerLeadingIcon} size={20} color="#fff" />
+                  : <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>}
+              </View>
+              <View style={st.headerProfileCopy}>
+                <Text numberOfLines={1} style={st.title}>{title}</Text>
+                {headerBadge !== null && <Text numberOfLines={1} style={st.badge}>{headerBadge ?? cfg.badge}</Text>}
+              </View>
+              <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.78)" />
+            </Pressable>
           ) : (
             <View style={st.avatar}>
               {headerLeadingIcon
@@ -54,10 +81,10 @@ export default function Shell({
                 : <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>}
             </View>
           )}
-          <View style={{ flex: 1 }}>
+          {!headerPressTo && <View style={{ flex: 1 }}>
             <Text style={st.title}>{title}</Text>
             {headerBadge !== null && <Text style={st.badge}>{headerBadge ?? cfg.badge}</Text>}
-          </View>
+          </View>}
           <Pressable
             onPress={toggleOnline}
             hitSlop={10}
@@ -83,7 +110,7 @@ export default function Shell({
         )}
       </SafeAreaView>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[{ padding: 16, paddingBottom: 120 }, fillContent && { flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
         {children}
       </ScrollView>
 
@@ -91,6 +118,7 @@ export default function Shell({
 
       {/* Bottom nav */}
       <BottomNavBar />
+      </View>
     </View>
   );
 }
@@ -111,6 +139,13 @@ function DotGrid() {
 }
 
 const st = StyleSheet.create({
+  root: { flex: 1 },
+  webFrame: { flex: 1, alignItems: "center", backgroundColor: "#D1D5DB" },
+  app: { flex: 1, width: "100%" },
+  webApp: { maxWidth: 430 },
+  headerProfile: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
+  headerProfilePressed: { opacity: 0.76 },
+  headerProfileCopy: { flex: 1, minWidth: 0 },
   top: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
   avatar: {
     width: 44,
