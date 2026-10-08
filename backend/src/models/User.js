@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
-    role: { type: String, enum: ["mother", "phm", "nursing", "moh"], required: true },
+    role: { type: String, enum: ["mother", "phm", "nursing", "moh"], required: true, lowercase: true },
     name: { type: String, required: true, trim: true },
     staffId: { type: String, unique: true, sparse: true, uppercase: true, trim: true }, // staff login
     phone: { type: String, unique: true, sparse: true, trim: true }, // mother login (OTP)
@@ -16,6 +16,7 @@ const userSchema = new mongoose.Schema(
     experienceYears: Number, // Years of public health service
     language: { type: String, enum: ["en", "si", "ta"], default: "en" },
     mother: { type: mongoose.Schema.Types.ObjectId, ref: "Mother" }, // linked profile for role=mother
+    mohOfficeId: { type: mongoose.Schema.Types.ObjectId, ref: "MohOffice" }, // assigned MOH Office for role=moh
     active: { type: Boolean, default: true },
   },
   { timestamps: true },
