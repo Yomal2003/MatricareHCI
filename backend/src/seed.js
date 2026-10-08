@@ -11,19 +11,60 @@ const today = new Date().toISOString().slice(0, 10);
   await connectDB();
   await Promise.all([User, Mother, Child, Visit, Immunization, Growth, Appointment, QueueEntry, Alert].map((M) => M.deleteMany({})));
 
-  const phm = await User.create({ role: "phm", name: "Kamani Rathnayake", staffId: "PHM001", password: "password123", badge: "PHM · Monaragala Division", area: "Buttala" });
+  const phm1 = await User.create({
+    role: "phm",
+    name: "Kamani Rathnayake",
+    staffId: "PHM001",
+    password: "password123",
+    phone: "0772345678",
+    badge: "Senior PHM · Buttala Division",
+    area: "Buttala",
+    locations: ["Buttala", "Buttala West", "Pelwatte"],
+    clinic: "Buttala MOH Clinic",
+    qualifications: "Registered Public Health Midwife · SLMC #3482",
+    experienceYears: 8,
+  });
+
+  const phm2 = await User.create({
+    role: "phm",
+    name: "Sujatha Wickramasinghe",
+    staffId: "PHM002",
+    password: "password123",
+    phone: "0713456789",
+    badge: "PHM · Wellawaya Division",
+    area: "Wellawaya",
+    locations: ["Wellawaya", "Malwatte", "Kandegama"],
+    clinic: "Wellawaya Health Center",
+    qualifications: "Registered Public Health Midwife · SLMC #4120",
+    experienceYears: 6,
+  });
+
+  const phm3 = await User.create({
+    role: "phm",
+    name: "Nirmala Senaviratne",
+    staffId: "PHM003",
+    password: "password123",
+    phone: "0764567890",
+    badge: "PHM · Okkampitiya Division",
+    area: "Okkampitiya",
+    locations: ["Okkampitiya", "Madulla", "Siyambalanduwa"],
+    clinic: "Okkampitiya Rural Clinic",
+    qualifications: "Registered Public Health Midwife · SLMC #4890",
+    experienceYears: 5,
+  });
+
   const nurse = await User.create({ role: "nursing", name: "Nalini Jayaweera", staffId: "NUR001", password: "password123", badge: "Nursing Officer · Buttala Clinic", area: "Buttala Clinic" });
   await User.create({ role: "moh", name: "Dr. Pradeep Silva", staffId: "MOH001", password: "password123", badge: "MOH · Monaragala District", area: "Monaragala" });
 
   const mothersData = [
-    { code: "M-1042", name: "Chamari Perera", village: "Buttala", phmArea: "Buttala", lmp: weeksAgo(28), risk: "low", phone: "0771234567", vitals: { weight: 62, bp: "110/70", hb: 11.4 } },
-    { code: "M-1043", name: "Dilani Kumari", village: "Okkampitiya", phmArea: "Okkampitiya", lmp: weeksAgo(34), risk: "high", riskFlags: ["High BP"], phone: "0712345678" },
-    { code: "M-1044", name: "Fathima Rizna", village: "Wellawaya", phmArea: "Wellawaya", lmp: weeksAgo(12), risk: "medium", riskFlags: ["Low Hb"], phone: "0759876543" },
-    { code: "M-1045", name: "Sivaranjani K.", village: "Siyambalanduwa", phmArea: "Siyambalanduwa", lmp: weeksAgo(22), risk: "low", phone: "0763456789" },
-    { code: "M-1046", name: "Nirosha Madushani", village: "Buttala", phmArea: "Buttala", lmp: weeksAgo(38), risk: "high", riskFlags: ["Reduced movements"], phone: "0701112233" },
-    { code: "M-1047", name: "Kumudu Wijesinghe", village: "Madulla", phmArea: "Madulla", status: "postnatal", risk: "medium", phone: "0723334455" },
+    { code: "M-1042", name: "Chamari Perera", village: "Buttala", phmArea: "Buttala", lmp: weeksAgo(28), risk: "low", phone: "0771234567", vitals: { weight: 62, bp: "110/70", hb: 11.4 }, assignedPhm: phm1._id },
+    { code: "M-1043", name: "Dilani Kumari", village: "Okkampitiya", phmArea: "Okkampitiya", lmp: weeksAgo(34), risk: "high", riskFlags: ["High BP"], phone: "0712345678", assignedPhm: phm3._id },
+    { code: "M-1044", name: "Fathima Rizna", village: "Wellawaya", phmArea: "Wellawaya", lmp: weeksAgo(12), risk: "medium", riskFlags: ["Low Hb"], phone: "0759876543", assignedPhm: phm2._id },
+    { code: "M-1045", name: "Sivaranjani K.", village: "Siyambalanduwa", phmArea: "Siyambalanduwa", lmp: weeksAgo(22), risk: "low", phone: "0763456789", assignedPhm: phm3._id },
+    { code: "M-1046", name: "Nirosha Madushani", village: "Pelwatte", phmArea: "Pelwatte", lmp: weeksAgo(38), risk: "high", riskFlags: ["Reduced movements"], phone: "0701112233", assignedPhm: phm1._id },
+    { code: "M-1047", name: "Kumudu Wijesinghe", village: "Madulla", phmArea: "Madulla", status: "postnatal", risk: "medium", phone: "0723334455", assignedPhm: phm3._id },
   ];
-  const mothers = await Mother.insertMany(mothersData.map((m) => ({ ...m, assignedPhm: phm._id })));
+  const mothers = await Mother.insertMany(mothersData);
   const M = Object.fromEntries(mothers.map((m) => [m.code, m]));
 
   M["M-1042"].family.push({ name: "Ruwan Perera", relation: "Husband", phone: "0779990000", consent: true });
@@ -50,8 +91,8 @@ const today = new Date().toISOString().slice(0, 10);
 
   await Visit.insertMany([
     { type: "anc", mother: M["M-1042"]._id, date: weeksAgo(2), weight: 62, bp: "110/70", hb: 11.4, recordedBy: nurse._id },
-    { type: "home-visit", mother: M["M-1042"]._id, date: weeksAgo(5), weight: 60, recordedBy: phm._id },
-    { type: "home-visit", mother: M["M-1043"]._id, date: weeksAgo(1), bp: "150/100", riskFlags: ["High BP"], recordedBy: phm._id },
+    { type: "home-visit", mother: M["M-1042"]._id, date: weeksAgo(5), weight: 60, recordedBy: phm1._id },
+    { type: "home-visit", mother: M["M-1043"]._id, date: weeksAgo(1), bp: "150/100", riskFlags: ["High BP"], recordedBy: phm3._id },
   ]);
 
   const appt = (code, type, category, d, status = "upcoming", place = "Buttala MOH Clinic") =>

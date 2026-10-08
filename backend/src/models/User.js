@@ -9,7 +9,11 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, unique: true, sparse: true, trim: true }, // mother login (OTP)
     password: { type: String, select: false },
     badge: String, // e.g. "PHM · Monaragala Division"
-    area: String, // PHM area / clinic / district
+    area: String, // Primary PHM area / clinic / district
+    locations: [String], // Array of assigned coverage locations/villages e.g. ["Pelwatte", "Malwatte"]
+    clinic: String, // Assigned clinic e.g. "Buttala MOH Clinic"
+    qualifications: String, // e.g. "Registered Public Health Midwife · SLMC Reg #4829"
+    experienceYears: Number, // Years of public health service
     language: { type: String, enum: ["en", "si", "ta"], default: "en" },
     mother: { type: mongoose.Schema.Types.ObjectId, ref: "Mother" }, // linked profile for role=mother
     active: { type: Boolean, default: true },
