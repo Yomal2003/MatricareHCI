@@ -7,6 +7,8 @@ module.exports = {
   "children:read": ["phm", "nursing", "moh"],
   "children:write": ["phm", "nursing"],
   "visits:write": ["phm", "nursing"],
+  "records:read": ["phm", "nursing"],
+  "records:write": ["phm", "nursing"],
   "immunizations:write": ["nursing"],
   "growth:write": ["phm", "nursing"],
   "appointments:read": ["phm", "nursing", "moh"],

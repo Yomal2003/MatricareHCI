@@ -1,7 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 export function getApiBaseUrl(): string {
+  if (Platform.OS === "web") {
+    return "http://localhost:4000";
+  }
+
   // 1. Try to extract IP directly from Metro / Expo Go host
   const hostUri =
     Constants.expoConfig?.hostUri ||
@@ -34,7 +39,7 @@ export async function api<T = any>(
 ): Promise<T> {
   const url = `${getApiBaseUrl()}${path}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 3500);
+  const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10000);
 
   try {
     const res = await fetch(url, {
@@ -55,6 +60,47 @@ export async function api<T = any>(
     clearTimeout(timeoutId);
   }
 }
+
+export type HealthRecordType = "visit" | "immunization" | "growth";
+export type HealthRecord = {
+  _id: string;
+  recordType: HealthRecordType;
+  date: string;
+  type?: string;
+  gestationWeeks?: number | null;
+  weight?: number | null;
+  bp?: string | null;
+  hb?: number | null;
+  fetalPosition?: string | null;
+  riskFlags?: string[];
+  notes?: string | null;
+  vaccine?: string;
+  dose?: number | null;
+  batch?: string;
+  height?: number | null;
+  muac?: number | null;
+  mother: { _id: string; code: string; name: string; village?: string };
+  child?: { _id: string; code?: string; name?: string };
+};
+
+export const getMotherRecords = (motherId: string) =>
+  api<HealthRecord[]>(`/records?motherId=${encodeURIComponent(motherId)}`);
+
+export const updateHealthRecord = (
+  recordType: HealthRecordType,
+  id: string,
+  fields: Record<string, unknown>,
+) =>
+  api<HealthRecord>(`/records/${recordType}/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: fields,
+  });
+
+export const deleteHealthRecord = (recordType: HealthRecordType, id: string) =>
+  api<{ deleted: boolean; id: string; recordType: HealthRecordType }>(
+    `/records/${recordType}/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
 
 // ---- Offline queue: entries are saved locally and pushed when back online ----
 const QKEY = "matricare.pending";

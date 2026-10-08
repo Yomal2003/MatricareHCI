@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
-import { T } from "../types";
-import { api, flushPending, getPending, queueRecord } from "../api/client";
+import { api, deleteHealthRecord, flushPending, getMotherRecords, getPending, HealthRecord, HealthRecordType, queueRecord, updateHealthRecord } from "../api/client";
 import Shell from "../components/Shell";
 import { Button, C, Card, Chip, Field, Row, s, usePalette } from "../components/ui";
 
@@ -531,20 +530,406 @@ const followupStyles = StyleSheet.create({
 });
 
 export function PHMSearch() {
-  const { language } = useApp();
-  const t = T[language];
+  const { navigate } = useApp();
   const [q, setQ] = useState("");
-  const list = useMothers(q);
+  const [mothers, setMothers] = useState<Mother[]>([]);
+  const [mothersLoading, setMothersLoading] = useState(false);
+  const [mothersError, setMothersError] = useState("");
+  const [searchRetry, setSearchRetry] = useState(0);
+  const [selectedMother, setSelectedMother] = useState<Mother | null>(null);
+  const [records, setRecords] = useState<HealthRecord[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState("");
+  const [recordsRetry, setRecordsRetry] = useState(0);
+  const [editing, setEditing] = useState<{ record: HealthRecord; values: Record<string, string> } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<HealthRecord | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setMothersLoading(true);
+    setMothersError("");
+    api<Mother[]>(`/mothers?q=${encodeURIComponent(q.trim())}`)
+      .then((items) => {
+        if (active) setMothers(items);
+      })
+      .catch((error) => {
+        if (active) {
+          setMothers([]);
+          setMothersError(error instanceof Error ? error.message : "Mother search could not be completed.");
+        }
+      })
+      .finally(() => {
+        if (active) setMothersLoading(false);
+      });
+    return () => { active = false; };
+  }, [q, searchRetry]);
+
+  useEffect(() => {
+    if (!selectedMother) {
+      setRecords([]);
+      setRecordsError("");
+      setRecordsLoading(false);
+      return;
+    }
+    let active = true;
+    setRecordsLoading(true);
+    setRecordsError("");
+    getMotherRecords(selectedMother.id)
+      .then((items) => {
+        if (active) setRecords(items);
+      })
+      .catch((error) => {
+        if (active) {
+          setRecords([]);
+          setRecordsError(error instanceof Error ? error.message : "Records could not be loaded.");
+        }
+      })
+      .finally(() => {
+        if (active) setRecordsLoading(false);
+      });
+    return () => { active = false; };
+  }, [selectedMother, recordsRetry]);
+
+  const selectMother = (mother: Mother) => {
+    setSelectedMother(mother);
+    setRecords([]);
+    setEditing(null);
+    setDeleteTarget(null);
+  };
+
+  const editRecord = (record: HealthRecord) => {
+    const values: Record<string, string> = {
+      date: record.date ? record.date.slice(0, 10) : "",
+    };
+    if (record.recordType === "visit") {
+      Object.assign(values, {
+        gestationWeeks: record.gestationWeeks == null ? "" : String(record.gestationWeeks),
+        weight: record.weight == null ? "" : String(record.weight),
+        bp: record.bp ?? "",
+        hb: record.hb == null ? "" : String(record.hb),
+        fetalPosition: record.fetalPosition ?? "",
+        notes: record.notes ?? "",
+      });
+    } else if (record.recordType === "immunization") {
+      Object.assign(values, {
+        vaccine: record.vaccine ?? "",
+        dose: record.dose == null ? "" : String(record.dose),
+        batch: record.batch ?? "",
+      });
+    } else {
+      Object.assign(values, {
+        weight: record.weight == null ? "" : String(record.weight),
+        height: record.height == null ? "" : String(record.height),
+        muac: record.muac == null ? "" : String(record.muac),
+      });
+    }
+    setEditing({ record, values });
+  };
+
+  const setEditValue = (key: string, value: string) => {
+    setEditing((current) => current ? { ...current, values: { ...current.values, [key]: value } } : current);
+  };
+
+  const saveRecordChanges = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const updatedRecord = await updateHealthRecord(editing.record.recordType, editing.record._id, editing.values);
+      setRecords((current) => current.map((record) => (
+        record._id === updatedRecord._id && record.recordType === updatedRecord.recordType ? updatedRecord : record
+      )));
+      setEditing(null);
+      if (selectedMother) {
+        try {
+          setRecords(await getMotherRecords(selectedMother.id));
+        } catch {
+          setRecordsError("The record was updated, but the list could not be refreshed.");
+        }
+      }
+      Alert.alert("Changes saved", "The health record was updated successfully.");
+    } catch (error) {
+      Alert.alert("Update failed", error instanceof Error ? error.message : "The record could not be updated.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || !selectedMother) return;
+    setSaving(true);
+    try {
+      await deleteHealthRecord(deleteTarget.recordType, deleteTarget._id);
+      setRecords((current) => current.filter((record) => (
+        record._id !== deleteTarget._id || record.recordType !== deleteTarget.recordType
+      )));
+      setDeleteTarget(null);
+      try {
+        setRecords(await getMotherRecords(selectedMother.id));
+      } catch {
+        setRecordsError("The record was deleted, but the list could not be refreshed.");
+      }
+      Alert.alert("Record deleted", "The health record was deleted successfully.");
+    } catch (error) {
+      Alert.alert("Delete failed", error instanceof Error ? error.message : "The record could not be deleted.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startNewVisit = () => {
+    navigate("phm-entry");
+  };
+
+  const recordTitle = (record: HealthRecord) => {
+    if (record.recordType === "immunization") return record.vaccine || "Vaccination";
+    if (record.recordType === "growth") return "Growth record";
+    return (record.type || "Visit").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  };
+
+  const fieldsForRecord = (record: HealthRecord) => {
+    if (record.recordType === "visit") {
+      return [
+        ["Gestation (weeks)", record.gestationWeeks],
+        ["Weight (kg)", record.weight],
+        ["Blood pressure", record.bp],
+        ["Hb (g/dL)", record.hb],
+        ["Fetal position", record.fetalPosition],
+        ["Notes", record.notes],
+      ].filter(([, value]) => value !== undefined && value !== null && value !== "");
+    }
+    if (record.recordType === "immunization") {
+      return [
+        ["Dose", record.dose],
+        ["Batch", record.batch],
+      ].filter(([, value]) => value !== undefined && value !== null && value !== "");
+    }
+    return [
+      ["Weight (kg)", record.weight],
+      ["Height (cm)", record.height],
+      ["MUAC (cm)", record.muac],
+    ].filter(([, value]) => value !== undefined && value !== null && value !== "");
+  };
+
   return (
-    <Shell title={t.searchMothers}>
-      <Field icon="search" placeholder="Name or ID" value={q} onChangeText={setQ} />
-      <Card label="RESULTS">
-        {list.length ? list.map((m) => <Row key={m.id} icon="woman" title={m.name} sub={`${m.id} · ${m.village}`} right={<Chip text={`${m.weeks}w`} />} />)
-          : <Text style={s.muted}>No mothers found</Text>}
+    <Shell title="Search Records" headerBadge={null} headerLeadingIcon="chevron-back" headerBackTo="phm-home">
+      <Field icon="search" placeholder="Search mother name or ID" value={q} onChangeText={setQ} />
+      <Card label={selectedMother ? "MOTHER DETAILS" : "MOTHERS"}>
+        {selectedMother ? (
+          <>
+            <View style={recordStyles.selectedMother}>
+              <View style={recordStyles.selectedCopy}>
+                <Text style={recordStyles.motherName}>{selectedMother.name}</Text>
+                <Text style={recordStyles.motherSub}>Mother ID: {selectedMother.id}</Text>
+                <Text style={recordStyles.motherSub}>{selectedMother.village || "Village not listed"}</Text>
+                {selectedMother.weeks != null && (
+                  <Text style={recordStyles.motherSub}>
+                    {selectedMother.weeks} weeks · {(selectedMother.risk || "low").toUpperCase()} RISK
+                  </Text>
+                )}
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => {
+                setSelectedMother(null);
+                setRecords([]);
+                setEditing(null);
+                setDeleteTarget(null);
+              }}>
+                <Text style={recordStyles.changeMother}>Change</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : mothersLoading ? (
+          <Text style={recordStyles.empty}>Searching mothers...</Text>
+        ) : mothersError ? (
+          <View>
+            <Text accessibilityRole="alert" style={recordStyles.error}>Mother search failed: {mothersError}</Text>
+            <Pressable accessibilityRole="button" onPress={() => setSearchRetry((current) => current + 1)} style={recordStyles.retryButton}>
+              <Text style={recordStyles.retryText}>Retry search</Text>
+            </Pressable>
+          </View>
+        ) : mothers.length ? mothers.map((mother) => (
+          <Pressable
+            key={mother.id}
+            accessibilityRole="button"
+            accessibilityLabel={`View records for ${mother.name}`}
+            onPress={() => selectMother(mother)}
+            style={({ pressed }) => [recordStyles.motherRow, pressed && recordStyles.pressed]}
+          >
+            <View style={recordStyles.motherIcon}><Ionicons name="woman-outline" size={18} color="#087F5B" /></View>
+            <View style={recordStyles.selectedCopy}>
+              <Text style={recordStyles.motherName}>{mother.name}</Text>
+              <Text style={recordStyles.motherSub}>{mother.id} · {mother.village || "Village not listed"}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#94A29E" />
+          </Pressable>
+        )) : <Text style={s.muted}>{q.trim() ? "No mothers match this name or ID." : "No mothers are available for your account."}</Text>}
       </Card>
+
+      {selectedMother && (
+        editing ? (
+          <Card label={`EDIT ${recordTitle(editing.record).toUpperCase()}`}>
+            <EntryField label="RECORD DATE" value={editing.values.date ?? ""} onChangeText={(value) => setEditValue("date", value)} placeholder="YYYY-MM-DD" />
+            {editing.record.recordType === "visit" && (
+              <>
+                <EntryField label="GESTATION (WEEKS)" value={editing.values.gestationWeeks ?? ""} onChangeText={(value) => setEditValue("gestationWeeks", value)} placeholder="e.g. 28" keyboardType="number-pad" />
+                <EntryField label="WEIGHT (KG)" value={editing.values.weight ?? ""} onChangeText={(value) => setEditValue("weight", value)} placeholder="e.g. 62.5" keyboardType="decimal-pad" />
+                <EntryField label="BLOOD PRESSURE" value={editing.values.bp ?? ""} onChangeText={(value) => setEditValue("bp", value)} placeholder="e.g. 120/80" />
+                <EntryField label="HB LEVEL (G/DL)" value={editing.values.hb ?? ""} onChangeText={(value) => setEditValue("hb", value)} placeholder="e.g. 11.5" keyboardType="decimal-pad" />
+                <EntryField label="FETAL POSITION" value={editing.values.fetalPosition ?? ""} onChangeText={(value) => setEditValue("fetalPosition", value)} placeholder="e.g. Cephalic" />
+                <View style={entryStyles.fieldWrap}>
+                  <Text style={entryStyles.label}>CLINICAL NOTES</Text>
+                  <TextInput
+                    accessibilityLabel="Clinical notes"
+                    value={editing.values.notes ?? ""}
+                    onChangeText={(value) => setEditValue("notes", value)}
+                    placeholder="Any clinical issues, referrals..."
+                    placeholderTextColor="#A0B0AC"
+                    multiline
+                    textAlignVertical="top"
+                    style={[entryStyles.input, entryStyles.notesInput]}
+                  />
+                </View>
+              </>
+            )}
+            {editing.record.recordType === "immunization" && (
+              <>
+                <EntryField label="VACCINE NAME" value={editing.values.vaccine ?? ""} onChangeText={(value) => setEditValue("vaccine", value)} placeholder="e.g. TT2" />
+                <EntryField label="DOSE" value={editing.values.dose ?? ""} onChangeText={(value) => setEditValue("dose", value)} placeholder="e.g. 2" keyboardType="number-pad" />
+                <EntryField label="LOT NUMBER" value={editing.values.batch ?? ""} onChangeText={(value) => setEditValue("batch", value)} placeholder="e.g. LOT2024-A" />
+              </>
+            )}
+            {editing.record.recordType === "growth" && (
+              <>
+                <EntryField label="WEIGHT (KG)" value={editing.values.weight ?? ""} onChangeText={(value) => setEditValue("weight", value)} placeholder="e.g. 7.5" keyboardType="decimal-pad" />
+                <EntryField label="HEIGHT (CM)" value={editing.values.height ?? ""} onChangeText={(value) => setEditValue("height", value)} placeholder="e.g. 67" keyboardType="decimal-pad" />
+                <EntryField label="MUAC (CM)" value={editing.values.muac ?? ""} onChangeText={(value) => setEditValue("muac", value)} placeholder="e.g. 14.5" keyboardType="decimal-pad" />
+              </>
+            )}
+            <View style={recordStyles.actions}>
+              <Button title={saving ? "Saving..." : "Save Changes"} icon="save-outline" onPress={saveRecordChanges} style={recordStyles.actionButton} />
+              <Button title="Cancel" variant="ghost" onPress={() => setEditing(null)} style={recordStyles.actionButton} />
+            </View>
+          </Card>
+        ) : (
+          <Card label="HEALTH RECORDS">
+            <View style={recordStyles.recordsHeading}>
+              <Text style={recordStyles.recordsMother}>{selectedMother.name}</Text>
+              <Text style={recordStyles.recordCount}>{records.length}</Text>
+            </View>
+            {recordsLoading ? (
+              <Text style={recordStyles.empty}>Loading health records...</Text>
+            ) : recordsError ? (
+              <View>
+                <Text accessibilityRole="alert" style={recordStyles.error}>{recordsError}</Text>
+                <Pressable accessibilityRole="button" onPress={() => setRecordsRetry((current) => current + 1)} style={recordStyles.retryButton}>
+                  <Text style={recordStyles.retryText}>Retry loading records</Text>
+                </Pressable>
+              </View>
+            ) : records.length ? records.map((record) => (
+              <View key={`${record.recordType}-${record._id}`} style={recordStyles.recordCard}>
+                <View style={recordStyles.recordTop}>
+                  <View style={recordStyles.recordTitleWrap}>
+                    <Text style={recordStyles.recordTitle}>{recordTitle(record)}</Text>
+                    <Text style={recordStyles.recordDate}>{new Date(record.date).toLocaleDateString()}</Text>
+                  </View>
+                  <Text style={recordStyles.recordType}>{record.recordType === "visit" ? "VISIT" : record.recordType.toUpperCase()}</Text>
+                </View>
+                {fieldsForRecord(record).length > 0 && (
+                  <View style={recordStyles.recordFields}>
+                    {fieldsForRecord(record).map(([label, value]) => (
+                      <View key={label} style={recordStyles.recordField}>
+                        <Text style={recordStyles.recordFieldLabel}>{label}</Text>
+                        <Text style={recordStyles.recordFieldValue}>{String(value)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                <View style={recordStyles.recordActions}>
+                  <Pressable accessibilityRole="button" onPress={() => editRecord(record)} style={recordStyles.recordAction}>
+                    <Ionicons name="create-outline" size={15} color="#087F5B" />
+                    <Text style={recordStyles.editAction}>Edit</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" onPress={() => setDeleteTarget(record)} style={recordStyles.recordAction}>
+                    <Ionicons name="trash-outline" size={15} color="#B42318" />
+                    <Text style={recordStyles.deleteAction}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )) : (
+              <View style={recordStyles.noRecords}>
+                <Text style={recordStyles.empty}>No saved health records for this mother.</Text>
+                <Button title="Record Visit" icon="add" onPress={startNewVisit} style={recordStyles.newVisitButton} />
+              </View>
+            )}
+          </Card>
+        )
+      )}
+
+      <Modal transparent visible={!!deleteTarget} animationType="fade" onRequestClose={() => setDeleteTarget(null)}>
+        <View style={recordStyles.modalBackdrop}>
+          <View accessibilityRole="alert" style={recordStyles.confirmCard}>
+            <Text style={recordStyles.confirmTitle}>Delete Record</Text>
+            <Text style={recordStyles.confirmMessage}>Are you sure you want to delete this record?</Text>
+            <View style={recordStyles.actions}>
+              <Button title="Cancel" variant="ghost" onPress={() => setDeleteTarget(null)} style={recordStyles.actionButton} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: saving }}
+                disabled={saving}
+                onPress={confirmDelete}
+                style={({ pressed }) => [recordStyles.confirmDelete, pressed && { opacity: 0.82 }, saving && { opacity: 0.65 }]}
+              >
+                <Text style={recordStyles.confirmDeleteText}>{saving ? "Deleting..." : "Delete"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Shell>
   );
 }
+
+const recordStyles = StyleSheet.create({
+  selectedMother: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 5 },
+  selectedCopy: { flex: 1, minWidth: 0 },
+  motherRow: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
+  motherIcon: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 17, backgroundColor: "#E6F5EE" },
+  motherName: { color: C.ink, fontSize: 12, fontWeight: "700" },
+  motherSub: { marginTop: 3, color: C.sub, fontSize: 10 },
+  changeMother: { color: "#087F5B", fontSize: 11, fontWeight: "700" },
+  retryButton: { alignSelf: "center", paddingHorizontal: 12, paddingVertical: 8 },
+  retryText: { color: "#087F5B", fontSize: 10, fontWeight: "700" },
+  recordsHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  recordsMother: { color: C.ink, fontSize: 12, fontWeight: "700" },
+  recordCount: { minWidth: 22, paddingHorizontal: 6, paddingVertical: 3, overflow: "hidden", borderRadius: 999, backgroundColor: "#EAF5F0", color: "#087F5B", fontSize: 9, fontWeight: "800", textAlign: "center" },
+  recordCard: { padding: 10, marginTop: 8, borderWidth: 1, borderColor: "#E6EEEA", borderRadius: 12, backgroundColor: "#fff" },
+  recordTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
+  recordTitleWrap: { flex: 1, minWidth: 0 },
+  recordTitle: { color: C.ink, fontSize: 12, fontWeight: "800", textTransform: "capitalize" },
+  recordDate: { marginTop: 3, color: C.sub, fontSize: 9 },
+  recordType: { paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: "#F0F5F3", color: "#62736E", fontSize: 8, fontWeight: "800" },
+  recordFields: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 9 },
+  recordField: { minWidth: "42%", flexGrow: 1 },
+  recordFieldLabel: { color: "#81918C", fontSize: 8, fontWeight: "700" },
+  recordFieldValue: { marginTop: 2, color: C.ink, fontSize: 10 },
+  recordActions: { flexDirection: "row", justifyContent: "flex-end", gap: 14, paddingTop: 8, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  recordAction: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 4 },
+  editAction: { color: "#087F5B", fontSize: 10, fontWeight: "700" },
+  deleteAction: { color: "#B42318", fontSize: 10, fontWeight: "700" },
+  actions: { flexDirection: "row", gap: 8, marginTop: 10 },
+  actionButton: { flex: 1, minHeight: 40, borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 8 },
+  newVisitButton: { minHeight: 40, marginTop: 10, borderRadius: 10 },
+  noRecords: { alignItems: "center", paddingVertical: 14 },
+  empty: { paddingVertical: 14, color: C.sub, fontSize: 10, textAlign: "center" },
+  error: { paddingVertical: 12, color: C.danger, fontSize: 10, textAlign: "center" },
+  pressed: { opacity: 0.72 },
+  modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "rgba(7, 20, 18, 0.42)" },
+  confirmCard: { width: "100%", maxWidth: 340, padding: 18, borderRadius: 16, backgroundColor: "#fff" },
+  confirmTitle: { color: C.ink, fontSize: 15, fontWeight: "800" },
+  confirmMessage: { marginTop: 8, color: C.sub, fontSize: 12, lineHeight: 18 },
+  confirmDelete: { flex: 1, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: C.danger },
+  confirmDeleteText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+});
 
 export function PHMEntry() {
   const { navigate, refreshPending } = useApp();
