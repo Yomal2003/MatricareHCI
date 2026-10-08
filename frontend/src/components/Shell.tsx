@@ -13,34 +13,56 @@ const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   edit: "create", sync: "sync", bell: "notifications", chart: "bar-chart", report: "clipboard",
 };
 
-export default function Shell({ title, children }: { title: string; children: React.ReactNode }) {
+export default function Shell({
+  title,
+  children,
+  header,
+  backgroundColor,
+}: {
+  title: string;
+  children: React.ReactNode;
+  header?: React.ReactNode;
+  backgroundColor?: string;
+}) {
   const { role, language, isOnline, isSyncing, currentScreen, navigate, wireframeMode, toggleOnline, pending } = useApp();
   const p = usePalette();
   const cfg = ROLE_CONFIG[role!];
   const t = T[language];
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.wf ? "#F2F2F2" : p.colorBg }}>
+    <View style={{ flex: 1, backgroundColor: backgroundColor ?? (p.wf ? "#F2F2F2" : p.colorBg) }}>
       {/* Top bar */}
-      <SafeAreaView edges={["top"]} style={{ backgroundColor: p.color }}>
+      <SafeAreaView edges={["top"]} style={{ backgroundColor: header ? "#079DB8" : p.color }}>
         {wireframeMode && <WfLabel text="TOP BAR" />}
-        <View style={st.top}>
-          <View style={st.avatar}>
-            <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>
+        {header ?? (
+          <View style={st.top}>
+            <View style={st.avatar}>
+              <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={st.title}>{title}</Text>
+              <Text style={st.badge}>{cfg.badge}</Text>
+            </View>
+            <Pressable
+              onPress={toggleOnline}
+              hitSlop={10}
+              android_ripple={{ color: "rgba(255,255,255,0.25)", borderless: true, radius: 20 }}
+              style={({ pressed }) => [st.iconBtn, pressed && { opacity: 0.75 }]}
+            >
+              <Ionicons name={isOnline ? "cloud-done" : "cloud-offline"} size={21} color="#fff" />
+            </Pressable>
+            <Pressable
+              onPress={() => navigate("settings")}
+              hitSlop={10}
+              android_ripple={{ color: "rgba(255,255,255,0.25)", borderless: true, radius: 20 }}
+              style={({ pressed }) => [st.iconBtn, pressed && { opacity: 0.75 }]}
+            >
+              <Ionicons name="settings-sharp" size={21} color="#fff" />
+            </Pressable>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={st.title}>{title}</Text>
-            <Text style={st.badge}>{cfg.badge}</Text>
-          </View>
-          <Pressable onPress={toggleOnline} hitSlop={10} style={st.iconBtn}>
-            <Ionicons name={isOnline ? "cloud-done" : "cloud-offline"} size={22} color="#fff" />
-          </Pressable>
-          <Pressable onPress={() => navigate("settings")} hitSlop={10} style={st.iconBtn}>
-            <Ionicons name="settings-sharp" size={22} color="#fff" />
-          </Pressable>
-        </View>
+        )}
         {(!isOnline || isSyncing) && (
-          <View style={[st.banner, { backgroundColor: isOnline ? p.colorDark : "#7C2D12" }]}>
+          <View style={[st.banner, { backgroundColor: isOnline ? "rgba(0,0,0,0.18)" : "#7C2D12" }]}>
             <Ionicons name={isOnline ? "sync" : "cloud-offline"} size={14} color="#fff" />
             <Text style={st.bannerText}>{isOnline ? t.syncing : `${t.offline}${pending ? ` · ${pending} pending` : ""}`}</Text>
           </View>
@@ -76,15 +98,40 @@ function DotGrid() {
 
 const st = StyleSheet.create({
   top: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
-  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontWeight: "800" },
-  title: { color: "#fff", fontSize: 19, fontWeight: "800" },
-  badge: { color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 1 },
-  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.16)", alignItems: "center", justifyContent: "center" },
-  banner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 6 },
-  bannerText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-  navWrap: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 14, paddingBottom: 8 },
-  nav: { flexDirection: "row", backgroundColor: C.card, borderRadius: 26, padding: 8, gap: 4, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
-  navItem: { flex: 1, minHeight: 50, borderRadius: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 6 },
-  navLabel: { fontSize: 12, fontWeight: "800" },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: "#fff", fontWeight: "900", fontSize: 16 },
+  title: { color: "#fff", fontSize: 20, fontWeight: "800", letterSpacing: -0.2 },
+  badge: { color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 1, fontWeight: "600" },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.32)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  banner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 7,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  bannerText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 });

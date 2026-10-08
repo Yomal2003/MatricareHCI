@@ -18,10 +18,12 @@ if (env.nodeEnv !== "test") app.use(morgan("dev"));
 app.get("/health", (_req, res) => res.json({ ok: true, db: mongoose.connection.readyState === 1 ? "connected" : "disconnected" }));
 
 app.use("/auth", rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }), require("./routes/auth"));
+app.use("/api/auth/staff-login", require("./controllers/staffController").loginStaff);
 
 // Everything below requires a valid JWT.
 app.use(authenticate);
 app.use("/me", require("./routes/me"));
+app.use("/family-member", require("./routes/familyMember"));
 app.use("/mothers", require("./routes/mothers"));
 app.use("/children", require("./routes/children"));
 app.use("/records", require("./routes/records"));
@@ -30,6 +32,8 @@ app.use("/queue", require("./routes/queue"));
 app.use("/alerts", require("./routes/alerts"));
 app.use("/reports", require("./routes/reports"));
 app.use("/users", require("./routes/users"));
+app.use("/api/moh/staff", require("./routes/staffRoutes"));
+app.use("/api/auth/reset-password", require("./controllers/staffController").validateResetPasswordInput, require("./controllers/staffController").resetPassword);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -2,6 +2,8 @@
 module.exports = {
   "self:read": ["mother"],
   "self:consent": ["mother"],
+  "self:appointments": ["mother"],
+  "family:self": ["family_member"],
   "mothers:read": ["phm", "nursing", "moh"],
   "mothers:write": ["phm", "nursing", "moh"],
   "children:read": ["phm", "nursing", "moh"],
@@ -12,7 +14,8 @@ module.exports = {
   "immunizations:write": ["nursing"],
   "growth:write": ["phm", "nursing"],
   "appointments:read": ["phm", "nursing", "moh"],
-  "appointments:write": ["phm", "nursing"],
+  "appointments:write": [],
+  "appointments:outcome": ["phm"],
   "queue:read": ["nursing"],
   "queue:write": ["nursing"],
   "alerts:read": ["moh", "phm"],

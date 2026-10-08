@@ -1,4 +1,4 @@
-export type Role = "mother" | "phm" | "nursing" | "moh";
+export type Role = "mother" | "family_member" | "phm" | "nursing" | "moh";
 export type Language = "en" | "si" | "ta";
 
 export type Screen =
@@ -9,6 +9,9 @@ export type Screen =
   | "mother-appointments"
   | "mother-records"
   | "mother-consent"
+  | "family-member-home"
+  | "family-member-notifications"
+  | "family-member-consent"
   | "phm-home"
   | "phm-followups"
   | "phm-search"
@@ -38,6 +41,8 @@ export interface AppContextType {
   setWireframeMode: (v: boolean) => void;
   setShowLanguageModal: (v: boolean) => void;
   toggleOnline: () => void;
+  requestPhoneOtp: (phone: string) => Promise<{ devOtp?: string }>;
+  verifyPhoneOtp: (phone: string, otp: string) => Promise<void>;
 }
 
 export const ROLE_CONFIG: Record<
@@ -66,6 +71,20 @@ export const ROLE_CONFIG: Record<
       { key: "appointments", labelEn: "Visits", labelSi: "හමු", icon: "calendar", screen: "mother-appointments" },
       { key: "records", labelEn: "Records", labelSi: "වාර්තා", icon: "document", screen: "mother-records" },
       { key: "consent", labelEn: "Family", labelSi: "පවුල", icon: "people", screen: "mother-consent" },
+    ],
+  },
+  family_member: {
+    color: "#079DB8",
+    colorLight: "#D8F6FA",
+    colorDark: "#087F98",
+    colorBg: "#F4F7F8",
+    name: "Family Member",
+    badge: "Family Member",
+    homeScreen: "family-member-home",
+    navItems: [
+      { key: "home", labelEn: "Home", labelSi: "මුල", icon: "home", screen: "family-member-home" },
+      { key: "notifications", labelEn: "Reminders", labelSi: "මතක්", icon: "bell", screen: "family-member-notifications" },
+      { key: "consent", labelEn: "Consent", labelSi: "අනුමැතිය", icon: "people", screen: "family-member-consent" },
     ],
   },
   phm: {
@@ -99,17 +118,17 @@ export const ROLE_CONFIG: Record<
     ],
   },
   moh: {
-    color: "#7C3AED",
+    color: "#7B4FE0",
     colorLight: "#EDE9FE",
-    colorDark: "#6D28D9",
-    colorBg: "#F5F3FF",
+    colorDark: "#6B3FD4",
+    colorBg: "#F5F6FA",
     name: "Dr. Pradeep Silva",
     badge: "MOH · Monaragala District",
     homeScreen: "moh-home",
     navItems: [
       { key: "home", labelEn: "Dashboard", labelSi: "සාරාංශ", icon: "home", screen: "moh-home" },
       { key: "alerts", labelEn: "Alerts", labelSi: "අනතුරු", icon: "bell", screen: "moh-alerts" },
-      { key: "missed", labelEn: "Missed", labelSi: "මඟ හැරී", icon: "chart", screen: "moh-missed" },
+      { key: "staff", labelEn: "Staff", labelSi: "කාර්ය මණ්ඩලය", icon: "people", screen: "moh-missed" },
       { key: "reports", labelEn: "Reports", labelSi: "වාර්තා", icon: "report", screen: "moh-reports" },
     ],
   },
