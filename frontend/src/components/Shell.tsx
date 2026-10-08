@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, Pattern, Rect } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
-import { ROLE_CONFIG, T } from "../types";
+import { ROLE_CONFIG, Screen, T } from "../types";
 import { C, usePalette, WfLabel } from "./ui";
 import BottomNavBar from "./BottomNavBar";
 
@@ -13,7 +13,19 @@ const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   edit: "create", sync: "sync", bell: "notifications", chart: "bar-chart", report: "clipboard",
 };
 
-export default function Shell({ title, children }: { title: string; children: React.ReactNode }) {
+export default function Shell({
+  title,
+  children,
+  headerBadge,
+  headerLeadingIcon,
+  headerBackTo,
+}: {
+  title: string;
+  children: React.ReactNode;
+  headerBadge?: string | null;
+  headerLeadingIcon?: keyof typeof Ionicons.glyphMap;
+  headerBackTo?: Screen;
+}) {
   const { role, language, isOnline, isSyncing, currentScreen, navigate, wireframeMode, toggleOnline, pending } = useApp();
   const p = usePalette();
   const cfg = ROLE_CONFIG[role!];
@@ -25,12 +37,26 @@ export default function Shell({ title, children }: { title: string; children: Re
       <SafeAreaView edges={["top"]} style={{ backgroundColor: p.color }}>
         {wireframeMode && <WfLabel text="TOP BAR" />}
         <View style={st.top}>
-          <View style={st.avatar}>
-            <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>
-          </View>
+          {headerBackTo ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back to home"
+              onPress={() => navigate(headerBackTo)}
+              hitSlop={8}
+              style={({ pressed }) => [st.avatar, pressed && { opacity: 0.75 }]}
+            >
+              <Ionicons name={headerLeadingIcon ?? "chevron-back"} size={20} color="#fff" />
+            </Pressable>
+          ) : (
+            <View style={st.avatar}>
+              {headerLeadingIcon
+                ? <Ionicons name={headerLeadingIcon} size={20} color="#fff" />
+                : <Text style={st.avatarText}>{cfg.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</Text>}
+            </View>
+          )}
           <View style={{ flex: 1 }}>
             <Text style={st.title}>{title}</Text>
-            <Text style={st.badge}>{cfg.badge}</Text>
+            {headerBadge !== null && <Text style={st.badge}>{headerBadge ?? cfg.badge}</Text>}
           </View>
           <Pressable
             onPress={toggleOnline}

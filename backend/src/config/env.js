@@ -1,4 +1,8 @@
-require("dotenv").config();
+const path = require("path");
+
+require("dotenv").config({
+  path: path.resolve(__dirname, "../../.env"),
+});
 
 const env = {
   port: Number(process.env.PORT) || 4000,
@@ -12,7 +16,9 @@ const env = {
 };
 
 if (!env.mongoUri) {
-  console.error("✖ MONGODB_URI is empty. Add your MongoDB connection string to backend/.env");
+  console.error(
+    "✖ MONGODB_URI is empty. Add your MongoDB connection string to backend/.env"
+  );
   process.exit(1);
 }
 
