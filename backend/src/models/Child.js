@@ -8,6 +8,7 @@ const childSchema = new mongoose.Schema(
     dob: { type: Date, required: true },
     sex: { type: String, enum: ["male", "female"] },
     birthWeight: Number,
+    active: { type: Boolean, default: true },
   },
   { timestamps: true },
 );

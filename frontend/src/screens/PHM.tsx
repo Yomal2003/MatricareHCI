@@ -249,6 +249,20 @@ export function PHMHome() {
             style={{ ...homeStyles.actionButton, ...homeStyles.secondaryAction, borderColor: p.color, backgroundColor: "#fff" }}
           />
         </View>
+        <Button
+          title="Mother & Baby Management"
+          icon="people-outline"
+          variant="ghost"
+          onPress={() => navigate("phm-mother-management")}
+          style={{ ...homeStyles.managementButton, borderColor: p.color, backgroundColor: "#fff" }}
+        />
+        <Button
+          title="Child Management"
+          icon="happy-outline"
+          variant="ghost"
+          onPress={() => navigate("phm-child-management")}
+          style={{ ...homeStyles.managementButton, borderColor: p.color, backgroundColor: "#fff" }}
+        />
       </View>
     </Shell>
   );
@@ -285,6 +299,7 @@ const homeStyles = StyleSheet.create({
   recordText: { fontSize: 9, fontWeight: "700" },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 42, backgroundColor: "#E9EFED" },
   actions: { flexDirection: "row", gap: 10 },
+  managementButton: { minHeight: 44, borderWidth: 1.5 },
   actionButton: { flex: 1, minHeight: 46, paddingHorizontal: 8, borderRadius: 12 },
   secondaryAction: { borderWidth: 1.5 },
   pressed: { opacity: 0.75 },

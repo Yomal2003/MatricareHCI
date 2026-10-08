@@ -10,6 +10,8 @@ import { Splash, Login } from "./src/screens/SplashLogin";
 import Settings from "./src/screens/Settings";
 import { MotherHome, MotherAppointments, MotherRecords, MotherConsent } from "./src/screens/Mother";
 import { PHMHome, PHMProfile, PHMFollowups, PHMSearch, PHMEntry, PHMSync } from "./src/screens/PHM";
+import PHMMotherManagement from "./src/screens/PHMMotherManagement";
+import PHMChildManagement from "./src/screens/PHMChildManagement";
 import { NursingHome, NursingEntry, NursingSearch } from "./src/screens/Nursing";
 import { MOHHome, MOHAlerts, MOHMissed, MOHReports } from "./src/screens/MOH";
 
@@ -19,7 +21,9 @@ const ROUTES: Record<Screen, { C: React.ComponentType; roles?: Role[] }> = {
   "mother-home": { C: MotherHome, roles: ["mother"] }, "mother-appointments": { C: MotherAppointments, roles: ["mother"] },
   "mother-records": { C: MotherRecords, roles: ["mother"] }, "mother-consent": { C: MotherConsent, roles: ["mother"] },
   "phm-home": { C: PHMHome, roles: ["phm"] }, "phm-profile": { C: PHMProfile, roles: ["phm"] }, "phm-followups": { C: PHMFollowups, roles: ["phm"] },
-  "phm-search": { C: PHMSearch, roles: ["phm"] }, "phm-entry": { C: PHMEntry, roles: ["phm"] }, "phm-sync": { C: PHMSync, roles: ["phm"] },
+  "phm-search": { C: PHMSearch, roles: ["phm"] }, "phm-mother-management": { C: PHMMotherManagement, roles: ["phm"] },
+  "phm-child-management": { C: PHMChildManagement, roles: ["phm"] },
+  "phm-entry": { C: PHMEntry, roles: ["phm"] }, "phm-sync": { C: PHMSync, roles: ["phm"] },
   "nursing-home": { C: NursingHome, roles: ["nursing"] }, "nursing-entry": { C: NursingEntry, roles: ["nursing"] },
   "nursing-search": { C: NursingSearch, roles: ["nursing"] },
   "moh-home": { C: MOHHome, roles: ["moh"] }, "moh-alerts": { C: MOHAlerts, roles: ["moh"] },

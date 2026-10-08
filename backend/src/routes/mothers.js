@@ -15,6 +15,7 @@ router.get("/", authorize("mothers:read"), ah(async (req, res) => {
   if (q) filter.$or = [{ name: new RegExp(q, "i") }, { code: new RegExp(q, "i") }, { phone: new RegExp(q) }, { village: new RegExp(q, "i") }];
   if (risk) filter.risk = risk;
   if (area) filter.phmArea = area;
+  if (req.query.excludeClosed === "true") filter.status = { $ne: "closed" };
   if (req.user.role === "phm") filter.assignedPhm = req.user._id; // PHMs only see their own division
   const list = await Mother.find(filter).sort({ risk: 1, name: 1 }).limit(Number(limit));
   res.json(list.map(toListItem));
@@ -23,26 +24,53 @@ router.get("/", authorize("mothers:read"), ah(async (req, res) => {
 router.get("/:key", authorize("mothers:read"), ah(async (req, res) => {
   const mother = await findByCodeOrId(req.params.key);
   if (!mother) throw new HttpError(404, "Mother not found");
+  if (req.user.role === "phm" && String(mother.assignedPhm) !== String(req.user._id)) {
+    throw new HttpError(404, "Mother not found");
+  }
   const [visits, appointments, children] = await Promise.all([
     Visit.find({ mother: mother._id }).sort({ date: -1 }).limit(20),
     Appointment.find({ mother: mother._id }).sort({ date: -1 }),
-    Child.find({ mother: mother._id }),
+    Child.find({ mother: mother._id, active: { $ne: false } }),
   ]);
   res.json({ mother, visits, appointments, children });
 }));
 
 router.post("/", authorize("mothers:write"), ah(async (req, res) => {
-  const count = await Mother.countDocuments();
-  const mother = await Mother.create({ ...pick(req.body, FIELDS), code: req.body.code || `M-${1000 + count + 1}`, assignedPhm: req.user._id });
+  if (typeof req.body.name !== "string" || !req.body.name.trim()) {
+    throw new HttpError(400, "Mother name is required");
+  }
+  let code = req.body.code;
+  if (!code) {
+    let nextCode = 1001 + await Mother.countDocuments();
+    while (await Mother.exists({ code: `M-${nextCode}` })) nextCode += 1;
+    code = `M-${nextCode}`;
+  }
+  const mother = await Mother.create({
+    ...pick(req.body, FIELDS),
+    name: req.body.name.trim(),
+    code,
+    assignedPhm: req.user._id,
+  });
   res.status(201).json(mother);
 }));
 
 router.patch("/:key", authorize("mothers:write"), ah(async (req, res) => {
   const mother = await findByCodeOrId(req.params.key);
   if (!mother) throw new HttpError(404, "Mother not found");
+  if (String(mother.assignedPhm) !== String(req.user._id)) throw new HttpError(404, "Mother not found");
   Object.assign(mother, pick(req.body, FIELDS));
   await mother.save();
   res.json(mother);
+}));
+
+router.delete("/:key", authorize("mothers:write"), ah(async (req, res) => {
+  const mother = await findByCodeOrId(req.params.key);
+  if (!mother || String(mother.assignedPhm) !== String(req.user._id)) {
+    throw new HttpError(404, "Mother not found");
+  }
+  mother.status = "closed";
+  await mother.save();
+  res.json({ deactivated: true, id: mother.code });
 }));
 
 module.exports = router;

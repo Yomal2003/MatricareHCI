@@ -13,6 +13,8 @@ export type Screen =
   | "phm-profile"
   | "phm-followups"
   | "phm-search"
+  | "phm-mother-management"
+  | "phm-child-management"
   | "phm-entry"
   | "phm-sync"
   | "nursing-home"
