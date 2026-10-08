@@ -336,8 +336,6 @@ type MotherAppointmentRecord = {
   category?: string;
   status: AppointmentStatus;
 };
-type AppointmentAction = "completed" | "missed" | "cancelled";
-
 export function MotherAppointments() {
   const { language } = useApp();
   const p = usePalette();
@@ -347,7 +345,7 @@ export function MotherAppointments() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [editing, setEditing] = useState<MotherAppointmentRecord | null>(null);
-  const [actionTarget, setActionTarget] = useState<{ appointment: MotherAppointmentRecord; action: AppointmentAction } | null>(null);
+  const [actionTarget, setActionTarget] = useState<MotherAppointmentRecord | null>(null);
   const [formType, setFormType] = useState("");
   const [formDate, setFormDate] = useState("");
   const [formTime, setFormTime] = useState("");
@@ -498,12 +496,8 @@ export function MotherAppointments() {
     setError("");
     setMessage("");
     try {
-      await api(`/me/appointments/${encodeURIComponent(actionTarget.appointment._id)}`, {
-        method: "PATCH",
-        body: { status: actionTarget.action },
-      });
-      const labels = { completed: "completed", missed: "missed", cancelled: "cancelled" };
-      setMessage(`Appointment marked ${labels[actionTarget.action]}.`);
+      await api(`/me/appointments/${encodeURIComponent(actionTarget._id)}`, { method: "DELETE" });
+      setMessage("Appointment cancelled.");
       setActionTarget(null);
       await refreshAppointments();
     } catch (updateError) {
@@ -550,17 +544,9 @@ export function MotherAppointments() {
                   <Ionicons name="create-outline" size={15} color="#087F98" />
                   <Text style={appointmentStyles.secondaryActionText}>Edit</Text>
                 </Pressable>
-                <Pressable disabled={saving} onPress={() => setActionTarget({ appointment, action: "cancelled" })} style={appointmentStyles.secondaryAction}>
+                <Pressable disabled={saving} onPress={() => setActionTarget(appointment)} style={appointmentStyles.secondaryAction}>
                   <Ionicons name="close-circle-outline" size={15} color="#65758A" />
                   <Text style={appointmentStyles.secondaryActionText}>Cancel</Text>
-                </Pressable>
-                <Pressable disabled={saving} onPress={() => setActionTarget({ appointment, action: "completed" })} style={appointmentStyles.completeAction}>
-                  <Ionicons name="checkmark-circle-outline" size={15} color="#FFFFFF" />
-                  <Text style={appointmentStyles.primaryActionText}>Mark Completed</Text>
-                </Pressable>
-                <Pressable disabled={saving} onPress={() => setActionTarget({ appointment, action: "missed" })} style={appointmentStyles.missedAction}>
-                  <Ionicons name="alert-circle-outline" size={15} color="#FFFFFF" />
-                  <Text style={appointmentStyles.primaryActionText}>Mark Missed</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -575,26 +561,24 @@ export function MotherAppointments() {
         <View style={appointmentStyles.modalBackdrop}>
           <View style={appointmentStyles.confirmModal}>
             <Text style={appointmentStyles.modalTitle}>
-              {actionTarget?.action === "completed" ? "Mark Appointment as Completed?"
-                : actionTarget?.action === "missed" ? "Mark Appointment as Missed?"
-                : "Cancel Appointment?"}
+              Cancel Appointment?
             </Text>
             {actionTarget ? (
               <>
-                <Text style={appointmentStyles.modalAppointmentTitle}>{actionTarget.appointment.type}</Text>
-                <Text style={appointmentStyles.modalText}>{formatAppointmentDateTime(actionTarget.appointment.date)}</Text>
-                {actionTarget.appointment.place ? <Text style={appointmentStyles.modalText}>{actionTarget.appointment.place}</Text> : null}
+                <Text style={appointmentStyles.modalAppointmentTitle}>{actionTarget.type}</Text>
+                <Text style={appointmentStyles.modalText}>{formatAppointmentDateTime(actionTarget.date)}</Text>
+                {actionTarget.place ? <Text style={appointmentStyles.modalText}>{actionTarget.place}</Text> : null}
               </>
             ) : null}
-            {actionTarget?.action === "cancelled" ? <Text style={appointmentStyles.modalText}>Are you sure you want to cancel this appointment?</Text> : null}
+            {actionTarget ? <Text style={appointmentStyles.modalText}>Are you sure you want to cancel this appointment?</Text> : null}
             {error ? <Text style={appointmentStyles.errorText}>{error}</Text> : null}
             <View style={appointmentStyles.modalActions}>
               <Pressable disabled={saving} onPress={() => setActionTarget(null)} style={appointmentStyles.keepButton}>
-                <Text style={appointmentStyles.keepButtonText}>{actionTarget?.action === "cancelled" ? "Keep Appointment" : "Cancel"}</Text>
+                <Text style={appointmentStyles.keepButtonText}>Keep Appointment</Text>
               </Pressable>
               <Pressable disabled={saving} onPress={() => void confirmAction()} style={[appointmentStyles.confirmButton, saving && { opacity: 0.6 }]}>
                 <Text style={appointmentStyles.confirmButtonText}>
-                  {saving ? "Saving…" : actionTarget?.action === "completed" ? "Mark Completed" : actionTarget?.action === "missed" ? "Mark Missed" : "Cancel Appointment"}
+                  {saving ? "Saving…" : "Cancel Appointment"}
                 </Text>
               </Pressable>
             </View>
@@ -806,9 +790,6 @@ const appointmentStyles = StyleSheet.create({
   actionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 9 },
   secondaryAction: { minHeight: 34, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderWidth: 1, borderColor: "#DCE6EA", borderRadius: 9, paddingHorizontal: 10 },
   secondaryActionText: { color: "#526782", fontSize: 10, fontWeight: "700" },
-  completeAction: { minHeight: 34, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 9, paddingHorizontal: 10, backgroundColor: "#10B981" },
-  missedAction: { minHeight: 34, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 9, paddingHorizontal: 10, backgroundColor: "#DC2626" },
-  primaryActionText: { color: "#FFFFFF", fontSize: 10, fontWeight: "800" },
   errorText: { color: "#C23636", fontSize: 11, marginVertical: 8 },
   successText: { color: "#0B9B66", fontSize: 11, marginVertical: 8 },
   modalBackdrop: { flex: 1, justifyContent: "center", paddingHorizontal: 22, backgroundColor: "rgba(16,24,40,0.45)" },

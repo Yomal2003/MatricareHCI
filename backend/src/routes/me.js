@@ -107,67 +107,49 @@ router.patch("/appointments/:id", authorize("self:appointments"), ah(async (req,
   const mother = await myMother(req);
   const appointment = await Appointment.findOne({ _id: req.params.id, mother: mother._id });
   if (!appointment) throw new HttpError(404, "Appointment not found");
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+  if (body.status !== undefined) throw new HttpError(403, "Mothers cannot change appointment outcomes");
   if (appointment.status !== "upcoming") throw new HttpError(409, "Only upcoming appointments can be changed");
 
-  const body = req.body && typeof req.body === "object" ? req.body : {};
-  if (body.status !== undefined) {
-    if (!["completed", "missed", "cancelled"].includes(body.status)) {
-      throw new HttpError(400, "Status must be completed, missed, or cancelled");
-    }
-    appointment.status = body.status;
-  } else {
-    if (body.type !== undefined) {
-      if (typeof body.type !== "string" || !body.type.trim() || body.type.trim().length > 120) throw new HttpError(400, "Appointment type must be 1 to 120 characters");
-      appointment.type = body.type.trim();
-    }
-    if (body.date !== undefined) {
-      const date = new Date(body.date);
-      if (typeof body.date !== "string" || !body.date.trim() || Number.isNaN(date.getTime())) throw new HttpError(400, "A valid appointment date and time is required");
-      appointment.date = date;
-    }
-    if (body.place !== undefined) {
-      if (typeof body.place !== "string") throw new HttpError(400, "Clinic must be text");
-      if (body.place.trim().length > 240) throw new HttpError(400, "Clinic must be 240 characters or fewer");
-      appointment.place = body.place.trim();
-    }
-    if (body.notes !== undefined) {
-      if (typeof body.notes !== "string") throw new HttpError(400, "Notes must be text");
-      if (body.notes.trim().length > 1000) throw new HttpError(400, "Notes must be 1000 characters or fewer");
-      appointment.notes = body.notes.trim();
-    }
-    if (!["type", "date", "place", "notes"].some((field) => body[field] !== undefined)) {
-      throw new HttpError(400, "Appointment changes are required");
-    }
+  const allowedFields = ["type", "date", "place", "notes"];
+  if (Object.keys(body).some((field) => !allowedFields.includes(field))) {
+    throw new HttpError(400, "Only appointment details can be changed");
+  }
+  if (body.type !== undefined) {
+    if (typeof body.type !== "string" || !body.type.trim() || body.type.trim().length > 120) throw new HttpError(400, "Appointment type must be 1 to 120 characters");
+    appointment.type = body.type.trim();
+  }
+  if (body.date !== undefined) {
+    const date = new Date(body.date);
+    if (typeof body.date !== "string" || !body.date.trim() || Number.isNaN(date.getTime())) throw new HttpError(400, "A valid appointment date and time are required");
+    appointment.date = date;
+  }
+  if (body.place !== undefined) {
+    if (typeof body.place !== "string") throw new HttpError(400, "Clinic must be text");
+    if (body.place.trim().length > 240) throw new HttpError(400, "Clinic must be 240 characters or fewer");
+    appointment.place = body.place.trim();
+  }
+  if (body.notes !== undefined) {
+    if (typeof body.notes !== "string") throw new HttpError(400, "Notes must be text");
+    if (body.notes.trim().length > 1000) throw new HttpError(400, "Notes must be 1000 characters or fewer");
+    appointment.notes = body.notes.trim();
+  }
+  if (!Object.keys(body).length) {
+    throw new HttpError(400, "Appointment changes are required");
   }
   await appointment.save();
 
-  if (["completed", "missed"].includes(appointment.status) && mother.familyNotificationsEnabled) {
-    const familyMembers = mother.family.filter((member) =>
-      member.consentStatus === "CONSENTED" && member.userId
-    );
-    for (const member of familyMembers) {
-      const recipient = await User.findOne({ _id: member.userId, role: "family_member", active: true });
-      if (!recipient) continue;
-      const statusLabel = appointment.status === "completed" ? "completed" : "missed";
-      await FamilyNotification.updateOne(
-        { dedupeKey: `appointment-update:${appointment._id}:${appointment.status}:${member._id}` },
-        {
-          $setOnInsert: {
-            recipient: recipient._id,
-            mother: mother._id,
-            familyMemberId: member._id,
-            appointment: appointment._id,
-            type: "APPOINTMENT_UPDATE",
-            dedupeKey: `appointment-update:${appointment._id}:${appointment.status}:${member._id}`,
-            title: "Appointment status updated",
-            message: `${mother.name} marked her ${appointment.type} as ${statusLabel}.`,
-            read: false,
-          },
-        },
-        { upsert: true },
-      );
-    }
-  }
+  res.json(appointment);
+}));
+
+router.delete("/appointments/:id", authorize("self:appointments"), ah(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(404, "Appointment not found");
+  const mother = await myMother(req);
+  const appointment = await Appointment.findOne({ _id: req.params.id, mother: mother._id });
+  if (!appointment) throw new HttpError(404, "Appointment not found");
+  if (appointment.status !== "upcoming") throw new HttpError(409, "Only upcoming appointments can be cancelled");
+  appointment.status = "cancelled";
+  await appointment.save();
   res.json(appointment);
 }));
 
