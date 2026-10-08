@@ -1,7 +1,7 @@
 // Populates MongoDB with demo users and data. Run: npm run seed   (WARNING: clears existing collections)
 const mongoose = require("mongoose");
 const connectDB = require("./config/db");
-const { User, Mother, Child, Visit, Immunization, Growth, Appointment, QueueEntry, Alert } = require("./models");
+const { User, Mother, Child, Visit, Immunization, Growth, Appointment, QueueEntry, Alert, FamilyNotification } = require("./models");
 
 const daysFromNow = (n) => new Date(Date.now() + n * 864e5);
 const weeksAgo = (w) => new Date(Date.now() - w * 7 * 864e5);
@@ -9,7 +9,7 @@ const today = new Date().toISOString().slice(0, 10);
 
 (async () => {
   await connectDB();
-  await Promise.all([User, Mother, Child, Visit, Immunization, Growth, Appointment, QueueEntry, Alert].map((M) => M.deleteMany({})));
+  await Promise.all([User, Mother, Child, Visit, Immunization, Growth, Appointment, QueueEntry, Alert, FamilyNotification].map((M) => M.deleteMany({})));
 
   const phm1 = await User.create({
     role: "phm",

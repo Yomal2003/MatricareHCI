@@ -8,8 +8,9 @@ const appointmentSchema = new mongoose.Schema(
     category: { type: String, enum: ["anc", "postnatal", "immunization", "growth", "home-visit", "scan"], default: "anc" },
     date: { type: Date, required: true },
     place: String,
-    status: { type: String, enum: ["upcoming", "done", "missed", "cancelled"], default: "upcoming" },
+    status: { type: String, enum: ["upcoming", "completed", "done", "missed", "cancelled"], default: "upcoming" },
     phmArea: String,
+    notes: { type: String, trim: true, maxlength: 1000 },
   },
   { timestamps: true },
 );

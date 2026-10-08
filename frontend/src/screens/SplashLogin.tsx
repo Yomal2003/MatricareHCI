@@ -22,14 +22,20 @@ export function Splash() {
 }
 
 const LANGS: { k: Language; label: string }[] = [{ k: "en", label: "English" }, { k: "si", label: "සිංහල" }, { k: "ta", label: "தமிழ்" }];
-const ROLE_ICON: Record<Role, keyof typeof Ionicons.glyphMap> = { mother: "woman", phm: "walk", nursing: "medkit", moh: "stats-chart" };
+const ROLE_ICON: Record<Role, keyof typeof Ionicons.glyphMap> = { mother: "woman", family_member: "people", phm: "walk", nursing: "medkit", moh: "stats-chart" };
+const DEMO_ROLES: Role[] = ["mother", "phm", "nursing", "moh"];
 
 export function Login() {
-  const { language, setLanguage, login } = useApp();
+  const { language, setLanguage, login, requestPhoneOtp, verifyPhoneOtp } = useApp();
   const t = T[language];
   const [mode, setMode] = useState<"mother" | "staff">("mother");
   const [otpSent, setOtpSent] = useState(false);
   const [loadingRole, setLoadingRole] = useState<Role | null>(null);
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [devOtp, setDevOtp] = useState("");
+  const [submittingPhone, setSubmittingPhone] = useState(false);
 
   const handleDemoLogin = async (r: Role) => {
     if (loadingRole) return;
@@ -38,6 +44,25 @@ export function Login() {
       await login(r);
     } finally {
       setLoadingRole(null);
+    }
+  };
+
+  const handlePhoneLogin = async () => {
+    if (submittingPhone) return;
+    setSubmittingPhone(true);
+    setAuthError("");
+    try {
+      if (!otpSent) {
+        const result = await requestPhoneOtp(phone);
+        setOtpSent(true);
+        setDevOtp(result.devOtp ?? "");
+      } else {
+        await verifyPhoneOtp(phone, otp);
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Could not sign in. Please try again.");
+    } finally {
+      setSubmittingPhone(false);
     }
   };
 
@@ -67,9 +92,11 @@ export function Login() {
           </View>
           {mode === "mother" ? (
             <>
-              <Field icon="call" placeholder={t.phonePlaceholder} keyboardType="phone-pad" />
-              {otpSent && <Field icon="key" placeholder={t.otpPlaceholder} keyboardType="number-pad" />}
-              <Button title={otpSent ? t.signIn : t.sendOtp} onPress={() => (otpSent ? login("mother") : setOtpSent(true))} style={{ backgroundColor: TEAL }} />
+              <Field icon="call" placeholder={t.phonePlaceholder} keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
+              {otpSent && <Field icon="key" placeholder={t.otpPlaceholder} keyboardType="number-pad" value={otp} onChangeText={setOtp} />}
+              {devOtp ? <Text style={st.devOtp}>Development OTP: {devOtp}</Text> : null}
+              {authError ? <Text accessibilityRole="alert" style={st.authError}>{authError}</Text> : null}
+              <Button title={submittingPhone ? "Please wait…" : otpSent ? t.signIn : t.sendOtp} onPress={() => void handlePhoneLogin()} style={{ backgroundColor: TEAL }} />
             </>
           ) : (
             <>
@@ -82,7 +109,7 @@ export function Login() {
 
         <Text style={st.demo}>{t.demoLabel}</Text>
         <View style={st.demoGrid}>
-          {(Object.keys(ROLE_CONFIG) as Role[]).map((r) => (
+          {DEMO_ROLES.map((r) => (
             <Pressable
               key={r}
               disabled={!!loadingRole}
@@ -125,6 +152,8 @@ const st = StyleSheet.create({
   segActive: { backgroundColor: "#fff", elevation: 1 },
   segText: { fontWeight: "700", color: C.sub },
   demo: { textAlign: "center", color: C.sub, marginTop: 24, marginBottom: 12, fontWeight: "600" },
+  devOtp: { color: C.sub, fontSize: 12, marginBottom: 8, textAlign: "center" },
+  authError: { color: "#B42318", fontSize: 12, marginBottom: 8 },
   demoGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   demoBtn: { width: "48%", backgroundColor: "#fff", borderRadius: 18, padding: 14, borderWidth: 1.5 },
   demoIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 8 },

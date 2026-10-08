@@ -2,28 +2,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
 export function getApiBaseUrl(): string {
-  // 1. Try to extract IP directly from Metro / Expo Go host
-  const hostUri =
-    Constants.expoConfig?.hostUri ||
-    (Constants as any).manifest?.debuggerHost ||
-    (Constants as any).manifest2?.extra?.expoClient?.hostUri;
-
-  if (hostUri) {
-    const ip = hostUri.split(":")[0];
-    if (ip && ip !== "localhost" && ip !== "127.0.0.1") {
-      return `http://${ip}:4000`;
-    }
-  }
-
-  // 2. Extra apiUrl in app.json
   const configured = (Constants.expoConfig?.extra as any)?.apiUrl;
   if (configured) return configured;
 
-  // 3. Fallback to current computer IP
-  return "http://172.20.10.3:4000";
+  return "http://192.168.8.131:4000";
 }
 
 export const API_URL: string = getApiBaseUrl();
+if (__DEV__) console.info(`[MatriCare] API base URL: ${API_URL}`);
 
 let token: string | null = null;
 export const setToken = (t: string | null) => (token = t);
@@ -32,7 +18,7 @@ export async function api<T = any>(
   path: string,
   opts: { method?: string; body?: unknown; timeoutMs?: number } = {}
 ): Promise<T> {
-  const url = `${getApiBaseUrl()}${path}`;
+  const url = `${API_URL}${path}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15000);
 
