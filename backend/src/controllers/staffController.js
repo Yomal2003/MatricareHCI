@@ -6,6 +6,8 @@
 
 const { body, validationResult } = require("express-validator");
 const { Staff, STAFF_ROLES } = require("../models/Staff");
+const { ClinicArea } = require("../models/ClinicArea");
+const { assertClinicAreaOwned } = require("../utils/ownership");
 const { generateUsername } = require("../utils/generateUsername");
 const {
   generateTemporaryPassword,
@@ -41,12 +43,12 @@ const validateStaffInput = [
     .isIn(STAFF_ROLES)
     .withMessage(`Role must be one of: ${STAFF_ROLES.join(", ")}`),
 
-  body("zone")
+  body("clinicAreaId")
     .trim()
     .notEmpty()
-    .withMessage("Zone is required")
-    .isLength({ min: 2, max: 50 })
-    .withMessage("Zone must be between 2 and 50 characters"),
+    .withMessage("Clinic area ID is required")
+    .isMongoId()
+    .withMessage("Invalid clinic area ID format"),
 
   body("phone")
     .trim()
@@ -93,9 +95,29 @@ async function createStaff(req, res) {
     });
   }
 
-  const { fullName, role, zone, phone, email } = req.body;
+  const { fullName, role, clinicAreaId, phone, email } = req.body;
+  const mohOfficeId = req.user?.mohOfficeId;
+
+  if (!mohOfficeId) {
+    return res.status(409).json({
+      message: "No MOH office assigned to this account",
+    });
+  }
 
   try {
+    // 2. Verify clinic area: must exist, be active, and belong to req.user.mohOfficeId (otherwise 403)
+    const clinicArea = await ClinicArea.findById(clinicAreaId);
+    if (
+      !clinicArea ||
+      clinicArea.status !== "active" ||
+      !clinicArea.mohOfficeId ||
+      clinicArea.mohOfficeId.toString() !== mohOfficeId.toString()
+    ) {
+      return res.status(403).json({
+        message: "Clinic area does not exist, is inactive, or belongs to a different MOH office.",
+      });
+    }
+
     // 3. Atomically generate unique username based on role prefix
     const username = await generateUsername(role);
 
@@ -112,11 +134,13 @@ async function createStaff(req, res) {
     // NEVER store or log the plain-text password
     const passwordHash = await hashPassword(temporaryPassword, 10);
 
-    // 6. Save staff record to database
+    // 6. Save staff record to database (mohOfficeId set strictly from req.user, never from req.body)
     const staff = new Staff({
       fullName,
       role,
-      zone,
+      clinicAreaId: clinicArea._id,
+      mohOfficeId,
+      zone: clinicArea.name,
       phone,
       email: targetEmail,
       username,
@@ -135,7 +159,7 @@ async function createStaff(req, res) {
       username,
       temporaryPassword,
       role,
-      zone,
+      zone: clinicArea.name,
     });
 
     const emailResult = await sendEmail({
@@ -402,14 +426,20 @@ async function resetPassword(req, res) {
  */
 async function getAllStaff(req, res) {
   try {
-    const { role, zone, status } = req.query;
+    const { role, zone, clinicAreaId, status } = req.query;
     const filter = {};
 
+    if (req.user?.mohOfficeId) {
+      filter.mohOfficeId = req.user.mohOfficeId;
+    }
     if (role) filter.role = role;
+    if (clinicAreaId) filter.clinicAreaId = clinicAreaId;
     if (zone) filter.zone = zone;
     if (status) filter.status = status;
 
-    const list = await Staff.find(filter).sort({ createdAt: -1 });
+    const list = await Staff.find(filter)
+      .populate("clinicAreaId", "name type address")
+      .sort({ createdAt: -1 });
 
     return res.status(200).json({
       count: list.length,
@@ -425,12 +455,77 @@ async function getAllStaff(req, res) {
 }
 
 /**
+ * PATCH /api/moh/staff/:id/reassign
+ * Reassigns a staff member to a target clinic area.
+ * Enforces that both the staff member and target clinic area belong to req.user.mohOfficeId.
+ */
+async function reassignStaff(req, res) {
+  try {
+    const { id } = req.params;
+    const { clinicAreaId } = req.body;
+    const mohOfficeId = req.user?.mohOfficeId;
+
+    if (!mohOfficeId) {
+      return res.status(409).json({
+        message: "No MOH office assigned to this account",
+      });
+    }
+
+    // 1. Verify staff exists and belongs to doctor's office
+    const staff = await Staff.findById(id);
+    if (!staff) {
+      return res.status(404).json({
+        message: `No staff member found with ID: ${id}`,
+      });
+    }
+
+    if (staff.mohOfficeId && staff.mohOfficeId.toString() !== mohOfficeId.toString()) {
+      return res.status(403).json({
+        message: "Access denied. Staff member belongs to a different MOH office",
+      });
+    }
+
+    // 2. Validate target clinic area using assertClinicAreaOwned (returns 404/403)
+    let targetClinicArea;
+    try {
+      targetClinicArea = await assertClinicAreaOwned(clinicAreaId, mohOfficeId);
+    } catch (err) {
+      return res.status(err.status || 500).json({
+        message: err.message,
+      });
+    }
+
+    if (targetClinicArea.status !== "active") {
+      return res.status(400).json({
+        message: "Cannot reassign staff to an inactive clinic area",
+      });
+    }
+
+    // 3. Update staff assignment
+    staff.clinicAreaId = targetClinicArea._id;
+    staff.mohOfficeId = mohOfficeId;
+    staff.zone = targetClinicArea.name;
+    await staff.save();
+
+    return res.status(200).json({
+      message: `Staff member '${staff.fullName}' successfully reassigned to '${targetClinicArea.name}'`,
+      staff,
+    });
+  } catch (error) {
+    console.error("❌ Error in reassignStaff controller:", error);
+    return res.status(500).json({
+      message: "An error occurred while reassigning staff member",
+    });
+  }
+}
+
+/**
  * GET /api/moh/staff/:id
  * Retrieves details for a specific staff member.
  */
 async function getStaffById(req, res) {
   try {
-    const staff = await Staff.findById(req.params.id);
+    const staff = await Staff.findById(req.params.id).populate("clinicAreaId", "name type address");
     if (!staff) {
       return res.status(404).json({
         error: "NotFound",
@@ -482,6 +577,7 @@ module.exports = {
   validateStaffInput,
   validateResetPasswordInput,
   createStaff,
+  reassignStaff,
   resendCredentials,
   deleteStaff,
   loginStaff,

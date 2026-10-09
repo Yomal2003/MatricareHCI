@@ -21,6 +21,9 @@ async function authenticate(req, _res, next) {
     const user = await User.findById(payload.sub || payload.id);
     if (!user || !user.active) throw new HttpError(401, "Account not found or disabled");
     req.user = user;
+    if (!req.user.mohOfficeId && payload.mohOfficeId) {
+      req.user.mohOfficeId = payload.mohOfficeId;
+    }
     next();
   } catch (e) {
     next(e.status ? e : new HttpError(401, "Invalid or expired token"));
@@ -34,6 +37,15 @@ const authorize = (perm) => (req, _res, next) => {
   next();
 };
 
-const signToken = (user) => jwt.sign({ sub: user.id, role: user.role }, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+const signToken = (user) => {
+  const payload = {
+    sub: user.id || user._id,
+    role: user.role,
+  };
+  if (user.mohOfficeId) {
+    payload.mohOfficeId = user.mohOfficeId.toString();
+  }
+  return jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+};
 
 module.exports = { authenticate, authorize, signToken };

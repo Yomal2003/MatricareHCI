@@ -16,11 +16,13 @@ const {
 const {
   validateStaffInput,
   createStaff,
+  reassignStaff,
   resendCredentials,
   deleteStaff,
   getAllStaff,
   getStaffById,
 } = require("../controllers/staffController");
+const { validateReassignStaff } = require("../middleware/validators/clinicAreaValidator");
 
 /**
  * Apply global authentication & role checks to all routes in this router.
@@ -37,6 +39,13 @@ router.use(requireRole("MOH"));
  * @access  Protected (MOH only)
  */
 router.post("/", staffCreationLimiter, validateStaffInput, createStaff);
+
+/**
+ * @route   PATCH /api/moh/staff/:id/reassign
+ * @desc    Reassign a staff member to a new clinic area
+ * @access  Protected (MOH only)
+ */
+router.patch("/:id/reassign", validateReassignStaff, reassignStaff);
 
 /**
  * @route   POST /api/moh/staff/:id/resend-credentials

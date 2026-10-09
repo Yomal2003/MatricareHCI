@@ -31,9 +31,18 @@ const staffSchema = new mongoose.Schema(
         message: "{VALUE} is not a valid staff role",
       },
     },
+    clinicAreaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ClinicArea",
+      required: [true, "Clinic area is required"],
+    },
+    mohOfficeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MohOffice",
+      required: false, // Set from req.user.mohOfficeId for MOH doctor staff
+    },
     zone: {
       type: String,
-      required: [true, "Zone is required"],
       trim: true,
     },
     phone: {
@@ -88,8 +97,10 @@ const staffSchema = new mongoose.Schema(
   }
 );
 
-// Secondary index on role for fast filtering
+// Secondary indexes for fast filtering
 staffSchema.index({ role: 1 });
+staffSchema.index({ mohOfficeId: 1 });
+staffSchema.index({ clinicAreaId: 1 });
 
 /**
  * toJSON Transform
