@@ -24,6 +24,7 @@ app.use("/api/auth/staff-login", require("./controllers/staffController").loginS
 // Everything below requires a valid JWT.
 app.use(authenticate);
 app.use("/me", require("./routes/me"));
+app.use("/family-member", require("./routes/familyMember"));
 app.use("/mothers", require("./routes/mothers"));
 app.use("/children", require("./routes/children"));
 app.use("/records", require("./routes/records"));

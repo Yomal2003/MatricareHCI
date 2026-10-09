@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../context";
 import { T } from "../types";
@@ -7,7 +7,7 @@ import { api, flushPending, getPending, queueRecord } from "../api/client";
 import Shell from "../components/Shell";
 import { Button, C, Card, Chip, Field, Ring, Row, SectionTitle, s, usePalette } from "../components/ui";
 
-type Mother = { id: string; name: string; village: string; weeks: number; risk: "low" | "medium" | "high" };
+type Mother = { id: string; _id?: string; name: string; village: string; weeks: number; risk: "low" | "medium" | "high" };
 const FALLBACK: Mother[] = [
   { id: "M-1043", name: "Dilani Kumari", village: "Okkampitiya", weeks: 34, risk: "high" },
   { id: "M-1044", name: "Fathima Rizna", village: "Wellawaya", weeks: 12, risk: "medium" },
@@ -79,18 +79,226 @@ export function PHMFollowups() {
 export function PHMSearch() {
   const { language } = useApp();
   const t = T[language];
+  const p = usePalette();
   const [q, setQ] = useState("");
   const list = useMothers(q);
+  const [selectedMother, setSelectedMother] = useState<Mother | null>(null);
+  const [appointments, setAppointments] = useState<PhmAppointment[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [appointmentsError, setAppointmentsError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [confirmation, setConfirmation] = useState<{ appointment: PhmAppointment; status: "completed" | "missed" } | null>(null);
+  const [updatingAppointment, setUpdatingAppointment] = useState(false);
+
+  const loadMotherAppointments = useCallback(async () => {
+    if (!selectedMother) return;
+    setAppointmentsLoading(true);
+    setAppointmentsError("");
+    try {
+      const key = selectedMother._id || selectedMother.id;
+      setAppointments(await api<PhmAppointment[]>(`/appointments?mother=${encodeURIComponent(key)}`));
+    } catch (loadError) {
+      setAppointmentsError(loadError instanceof Error ? loadError.message : "Could not load this mother's appointments.");
+    } finally {
+      setAppointmentsLoading(false);
+    }
+  }, [selectedMother]);
+
+  useEffect(() => {
+    void loadMotherAppointments();
+  }, [loadMotherAppointments]);
+
+  const confirmAppointmentStatus = async () => {
+    if (!confirmation) return;
+    setUpdatingAppointment(true);
+    setAppointmentsError("");
+    setStatusMessage("");
+    try {
+      await api(`/appointments/${encodeURIComponent(confirmation.appointment._id)}/status`, {
+        method: "PATCH",
+        body: { status: confirmation.status },
+      });
+      setConfirmation(null);
+      setStatusMessage(`Appointment marked ${confirmation.status}.`);
+      await loadMotherAppointments();
+    } catch (updateError) {
+      setAppointmentsError(updateError instanceof Error ? updateError.message : "Could not update appointment status.");
+    } finally {
+      setUpdatingAppointment(false);
+    }
+  };
+
   return (
     <Shell title={t.searchMothers}>
-      <Field icon="search" placeholder="Name or ID" value={q} onChangeText={setQ} />
-      <Card label="RESULTS">
-        {list.length ? list.map((m) => <Row key={m.id} icon="woman" title={m.name} sub={`${m.id} · ${m.village}`} right={<Chip text={`${m.weeks}w`} />} />)
-          : <Text style={s.muted}>No mothers found</Text>}
-      </Card>
+      {selectedMother ? (
+        <>
+          <Pressable onPress={() => {
+            setSelectedMother(null);
+            setAppointments([]);
+            setAppointmentsError("");
+            setStatusMessage("");
+          }} style={phmAppointmentStyles.backButton}>
+            <Ionicons name="arrow-back" size={17} color={p.colorDark} />
+            <Text style={[phmAppointmentStyles.backButtonText, { color: p.colorDark }]}>Search Mothers</Text>
+          </Pressable>
+          <Card>
+            <Text style={s.rowTitle}>{selectedMother.name}</Text>
+            <Text style={s.rowSub}>{selectedMother.id} · {selectedMother.village}</Text>
+          </Card>
+          <SectionTitle>Visit Timeline</SectionTitle>
+          {appointmentsLoading ? <Card><Text style={s.muted}>Loading appointments…</Text></Card> : null}
+          {!appointmentsLoading && !appointments.length && !appointmentsError
+            ? <Card><Text style={s.muted}>No appointments found.</Text></Card>
+            : null}
+          {appointments.map((appointment, index) => {
+            const status = appointment.status === "done" ? "completed" : appointment.status;
+            const dotColor = status === "upcoming" ? p.color
+              : status === "completed" ? "#10B981"
+              : status === "missed" ? "#DC2626"
+              : "#98A2B3";
+            return (
+              <View key={appointment._id} style={phmAppointmentStyles.timelineRow}>
+                <View style={phmAppointmentStyles.timelineRail}>
+                  <View style={[phmAppointmentStyles.timelineDot, { backgroundColor: dotColor }]} />
+                  {index < appointments.length - 1 ? <View style={phmAppointmentStyles.timelineLine} /> : null}
+                </View>
+                <Card style={phmAppointmentStyles.appointmentCard}>
+                  <Text style={[s.muted, { fontWeight: "700" }]}>{formatPhmAppointmentDate(appointment.date)}</Text>
+                  <Text style={s.rowTitle}>{appointment.type}</Text>
+                  {appointment.place ? <Text style={s.rowSub}>{appointment.place}</Text> : null}
+                  <View style={phmAppointmentStyles.statusRow}>
+                    <Chip
+                      text={status}
+                      tone={status === "completed" ? "ok" : status === "missed" ? "danger" : status === "upcoming" ? "ok" : "neutral"}
+                    />
+                  </View>
+                  {status === "upcoming" ? (
+                    <View style={phmAppointmentStyles.actionRow}>
+                      <Pressable
+                        disabled={updatingAppointment}
+                        onPress={() => setConfirmation({ appointment, status: "completed" })}
+                        style={[phmAppointmentStyles.completeButton, updatingAppointment && { opacity: 0.6 }]}
+                      >
+                        <Ionicons name="checkmark-circle-outline" size={15} color="#FFFFFF" />
+                        <Text style={phmAppointmentStyles.actionText}>Mark Completed</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={updatingAppointment}
+                        onPress={() => setConfirmation({ appointment, status: "missed" })}
+                        style={[phmAppointmentStyles.missedButton, updatingAppointment && { opacity: 0.6 }]}
+                      >
+                        <Ionicons name="alert-circle-outline" size={15} color="#FFFFFF" />
+                        <Text style={phmAppointmentStyles.actionText}>Mark Missed</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </Card>
+              </View>
+            );
+          })}
+          {appointmentsError ? <Text style={phmAppointmentStyles.errorText}>{appointmentsError}</Text> : null}
+          {statusMessage ? <Text style={phmAppointmentStyles.successText}>{statusMessage}</Text> : null}
+        </>
+      ) : (
+        <>
+          <Field icon="search" placeholder="Name or ID" value={q} onChangeText={setQ} />
+          <Card label="RESULTS">
+            {list.length ? list.map((m) => (
+              <Row
+                key={m.id}
+                icon="woman"
+                title={m.name}
+                sub={`${m.id} · ${m.village}`}
+                right={<Chip text={`${m.weeks}w`} />}
+                onPress={() => {
+                  setStatusMessage("");
+                  setAppointmentsError("");
+                  setSelectedMother(m);
+                }}
+              />
+            )) : <Text style={s.muted}>No mothers found</Text>}
+          </Card>
+        </>
+      )}
+      <Modal
+        visible={confirmation !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !updatingAppointment && setConfirmation(null)}
+      >
+        <View style={phmAppointmentStyles.modalBackdrop}>
+          <View style={phmAppointmentStyles.confirmModal}>
+            <Text style={phmAppointmentStyles.confirmTitle}>
+              {confirmation?.status === "completed"
+                ? "Mark this appointment as completed?"
+                : "Mark this appointment as missed?"}
+            </Text>
+            {confirmation ? (
+              <Text style={s.rowSub}>{confirmation.appointment.type} · {formatPhmAppointmentDate(confirmation.appointment.date)}</Text>
+            ) : null}
+            {appointmentsError ? <Text style={phmAppointmentStyles.errorText}>{appointmentsError}</Text> : null}
+            <View style={phmAppointmentStyles.confirmActions}>
+              <Pressable disabled={updatingAppointment} onPress={() => setConfirmation(null)} style={phmAppointmentStyles.cancelConfirmButton}>
+                <Text style={phmAppointmentStyles.cancelConfirmText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                disabled={updatingAppointment}
+                onPress={() => void confirmAppointmentStatus()}
+                style={[phmAppointmentStyles.confirmButton, updatingAppointment && { opacity: 0.6 }]}
+              >
+                <Text style={phmAppointmentStyles.confirmButtonText}>{updatingAppointment ? "Saving…" : "Confirm"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Shell>
   );
 }
+
+type PhmAppointment = {
+  _id: string;
+  type: string;
+  category?: string;
+  date: string;
+  place?: string;
+  status: "upcoming" | "completed" | "done" | "missed" | "cancelled";
+};
+
+function formatPhmAppointmentDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+const phmAppointmentStyles = StyleSheet.create({
+  backButton: { minHeight: 34, flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 8 },
+  backButtonText: { fontSize: 12, fontWeight: "700" },
+  timelineRow: { flexDirection: "row", gap: 10 },
+  timelineRail: { alignItems: "center", width: 16 },
+  timelineDot: { width: 12, height: 12, borderRadius: 6, marginTop: 20 },
+  timelineLine: { flex: 1, width: 2, backgroundColor: "#D7E3E1" },
+  appointmentCard: { flex: 1 },
+  statusRow: { marginTop: 8 },
+  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 10 },
+  completeButton: { minHeight: 36, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 9, paddingHorizontal: 10, backgroundColor: "#10B981" },
+  missedButton: { minHeight: 36, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 9, paddingHorizontal: 10, backgroundColor: "#DC2626" },
+  actionText: { color: "#FFFFFF", fontSize: 10, fontWeight: "800" },
+  errorText: { color: "#C23636", fontSize: 11, marginVertical: 8 },
+  successText: { color: "#0B9B66", fontSize: 11, marginVertical: 8 },
+  modalBackdrop: { flex: 1, justifyContent: "center", paddingHorizontal: 22, backgroundColor: "rgba(16,24,40,0.45)" },
+  confirmModal: { borderRadius: 17, backgroundColor: "#FFFFFF", padding: 17 },
+  confirmTitle: { color: "#101828", fontSize: 15, fontWeight: "800", marginBottom: 10 },
+  confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 16 },
+  cancelConfirmButton: { minHeight: 38, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: "#F1F4F6", paddingHorizontal: 14 },
+  cancelConfirmText: { color: "#526782", fontSize: 10, fontWeight: "700" },
+  confirmButton: { minHeight: 38, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: "#079DB8", paddingHorizontal: 16 },
+  confirmButtonText: { color: "#FFFFFF", fontSize: 10, fontWeight: "800" },
+});
 
 export function PHMEntry() {
   const { language, refreshPending, isOnline } = useApp();
