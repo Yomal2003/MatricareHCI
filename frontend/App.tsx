@@ -12,6 +12,7 @@ import { MotherHome, MotherAppointments, MotherRecords, MotherConsent } from "./
 import { PHMHome, PHMProfile, PHMFollowups, PHMSearch, PHMEntry, PHMSync } from "./src/screens/PHM";
 import PHMMotherManagement from "./src/screens/PHMMotherManagement";
 import PHMChildManagement from "./src/screens/PHMChildManagement";
+import PHMHighRiskMothers from "./src/screens/PHMHighRiskMothers";
 import { NursingHome, NursingEntry, NursingSearch } from "./src/screens/Nursing";
 import { MOHHome, MOHAlerts, MOHMissed, MOHReports } from "./src/screens/MOH";
 
@@ -23,6 +24,7 @@ const ROUTES: Record<Screen, { C: React.ComponentType; roles?: Role[] }> = {
   "phm-home": { C: PHMHome, roles: ["phm"] }, "phm-profile": { C: PHMProfile, roles: ["phm"] }, "phm-followups": { C: PHMFollowups, roles: ["phm"] },
   "phm-search": { C: PHMSearch, roles: ["phm"] }, "phm-mother-management": { C: PHMMotherManagement, roles: ["phm"] },
   "phm-child-management": { C: PHMChildManagement, roles: ["phm"] },
+  "phm-high-risk": { C: PHMHighRiskMothers, roles: ["phm"] },
   "phm-entry": { C: PHMEntry, roles: ["phm"] }, "phm-sync": { C: PHMSync, roles: ["phm"] },
   "nursing-home": { C: NursingHome, roles: ["nursing"] }, "nursing-entry": { C: NursingEntry, roles: ["nursing"] },
   "nursing-search": { C: NursingSearch, roles: ["nursing"] },

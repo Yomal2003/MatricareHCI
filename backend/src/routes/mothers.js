@@ -4,8 +4,55 @@ const { authorize } = require("../middleware/auth");
 const { ah, HttpError, pick } = require("../utils/http");
 
 // Shape used by the app lists: `id` is the human-readable code (M-1043).
-const toListItem = (m) => ({ id: m.code, _id: m._id, name: m.name, village: m.village, weeks: m.weeks, risk: m.risk, phone: m.phone, status: m.status });
-const FIELDS = ["name", "nic", "phone", "dob", "village", "phmArea", "lmp", "edd", "gravida", "risk", "riskFlags", "bloodGroup", "status"];
+const toListItem = (m) => ({
+  id: m.code,
+  _id: m._id,
+  name: m.name,
+  village: m.village,
+  weeks: m.weeks,
+  risk: m.risk,
+  riskFlags: m.riskFlags,
+  riskPriority: m.riskPriority,
+  riskNotes: m.riskNotes,
+  riskFollowUpDate: m.riskFollowUpDate,
+  phone: m.phone,
+  status: m.status,
+});
+const FIELDS = [
+  "name", "nic", "phone", "dob", "village", "phmArea", "lmp", "edd", "gravida",
+  "risk", "riskFlags", "riskPriority", "riskNotes", "riskFollowUpDate", "bloodGroup", "status",
+];
+const RISK_LEVELS = new Set(["low", "medium", "high"]);
+const RISK_PRIORITIES = new Set(["low", "medium", "high", "urgent"]);
+
+function pickMotherFields(body) {
+  const fields = pick(body, FIELDS);
+  if (Object.prototype.hasOwnProperty.call(fields, "risk") && !RISK_LEVELS.has(fields.risk)) {
+    throw new HttpError(400, "risk must be low, medium, or high");
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "riskFlags") &&
+      (!Array.isArray(fields.riskFlags) || fields.riskFlags.some((flag) => typeof flag !== "string"))) {
+    throw new HttpError(400, "riskFlags must be an array of strings");
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "riskPriority") &&
+      fields.riskPriority !== null && !RISK_PRIORITIES.has(fields.riskPriority)) {
+    throw new HttpError(400, "riskPriority must be low, medium, high, or urgent");
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "riskNotes") &&
+      fields.riskNotes !== null && typeof fields.riskNotes !== "string") {
+    throw new HttpError(400, "riskNotes must be text");
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "riskFollowUpDate")) {
+    if (fields.riskFollowUpDate === null || fields.riskFollowUpDate === "") {
+      fields.riskFollowUpDate = null;
+    } else {
+      const date = new Date(fields.riskFollowUpDate);
+      if (Number.isNaN(date.getTime())) throw new HttpError(400, "riskFollowUpDate must be a valid date");
+      fields.riskFollowUpDate = date;
+    }
+  }
+  return fields;
+}
 
 const findByCodeOrId = (key) => Mother.findOne(/^[0-9a-f]{24}$/i.test(key) ? { _id: key } : { code: key.toUpperCase() });
 
@@ -46,7 +93,7 @@ router.post("/", authorize("mothers:write"), ah(async (req, res) => {
     code = `M-${nextCode}`;
   }
   const mother = await Mother.create({
-    ...pick(req.body, FIELDS),
+    ...pickMotherFields(req.body),
     name: req.body.name.trim(),
     code,
     assignedPhm: req.user._id,
@@ -58,7 +105,7 @@ router.patch("/:key", authorize("mothers:write"), ah(async (req, res) => {
   const mother = await findByCodeOrId(req.params.key);
   if (!mother) throw new HttpError(404, "Mother not found");
   if (String(mother.assignedPhm) !== String(req.user._id)) throw new HttpError(404, "Mother not found");
-  Object.assign(mother, pick(req.body, FIELDS));
+  Object.assign(mother, pickMotherFields(req.body));
   await mother.save();
   res.json(mother);
 }));

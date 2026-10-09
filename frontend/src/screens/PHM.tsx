@@ -263,6 +263,13 @@ export function PHMHome() {
           onPress={() => navigate("phm-child-management")}
           style={{ ...homeStyles.managementButton, borderColor: p.color, backgroundColor: "#fff" }}
         />
+        <Button
+          title="High-Risk Patients"
+          icon="warning-outline"
+          variant="ghost"
+          onPress={() => navigate("phm-high-risk")}
+          style={{ ...homeStyles.managementButton, borderColor: "#DC2626", backgroundColor: "#fff" }}
+        />
       </View>
     </Shell>
   );

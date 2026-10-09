@@ -15,6 +15,7 @@ export type Screen =
   | "phm-search"
   | "phm-mother-management"
   | "phm-child-management"
+  | "phm-high-risk"
   | "phm-entry"
   | "phm-sync"
   | "nursing-home"
