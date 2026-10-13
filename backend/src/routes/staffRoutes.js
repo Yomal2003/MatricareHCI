@@ -21,6 +21,7 @@ const {
   deleteStaff,
   getAllStaff,
   getStaffById,
+  testEmailDelivery,
 } = require("../controllers/staffController");
 const { validateReassignStaff } = require("../middleware/validators/clinicAreaValidator");
 
@@ -30,6 +31,13 @@ const { validateReassignStaff } = require("../middleware/validators/clinicAreaVa
  */
 router.use(authenticate);
 router.use(requireRole("MOH"));
+
+/**
+ * @route   POST /api/moh/staff/test-email
+ * @desc    Send a diagnostic test email to verify SMTP configuration
+ * @access  Protected (MOH only)
+ */
+router.post("/test-email", testEmailDelivery);
 
 /**
  * @route   POST /api/moh/staff

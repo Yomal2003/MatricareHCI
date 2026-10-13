@@ -34,7 +34,7 @@ const staffSchema = new mongoose.Schema(
     clinicAreaId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ClinicArea",
-      required: [true, "Clinic area is required"],
+      required: false,
     },
     mohOfficeId: {
       type: mongoose.Schema.Types.ObjectId,

@@ -44,11 +44,14 @@ const validateStaffInput = [
     .withMessage(`Role must be one of: ${STAFF_ROLES.join(", ")}`),
 
   body("clinicAreaId")
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty()
-    .withMessage("Clinic area ID is required")
     .isMongoId()
     .withMessage("Invalid clinic area ID format"),
+
+  body("zone")
+    .optional({ checkFalsy: true })
+    .trim(),
 
   body("phone")
     .trim()
@@ -95,7 +98,7 @@ async function createStaff(req, res) {
     });
   }
 
-  const { fullName, role, clinicAreaId, phone, email } = req.body;
+  const { fullName, role, clinicAreaId, zone, phone, email } = req.body;
   const mohOfficeId = req.user?.mohOfficeId;
 
   if (!mohOfficeId) {
@@ -105,17 +108,41 @@ async function createStaff(req, res) {
   }
 
   try {
-    // 2. Verify clinic area: must exist, be active, and belong to req.user.mohOfficeId (otherwise 403)
-    const clinicArea = await ClinicArea.findById(clinicAreaId);
-    if (
-      !clinicArea ||
-      clinicArea.status !== "active" ||
-      !clinicArea.mohOfficeId ||
-      clinicArea.mohOfficeId.toString() !== mohOfficeId.toString()
-    ) {
-      return res.status(403).json({
-        message: "Clinic area does not exist, is inactive, or belongs to a different MOH office.",
+    // 2. Resolve clinic area
+    let clinicArea = null;
+    if (clinicAreaId) {
+      clinicArea = await ClinicArea.findById(clinicAreaId);
+      if (
+        !clinicArea ||
+        clinicArea.status !== "active" ||
+        !clinicArea.mohOfficeId ||
+        clinicArea.mohOfficeId.toString() !== mohOfficeId.toString()
+      ) {
+        return res.status(403).json({
+          message: "Clinic area does not exist, is inactive, or belongs to a different MOH office.",
+        });
+      }
+    } else {
+      const targetZoneName = (zone || "Main Clinic").trim();
+      clinicArea = await ClinicArea.findOne({
+        mohOfficeId,
+        status: "active",
+        name: { $regex: new RegExp(`^${targetZoneName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
       });
+
+      if (!clinicArea) {
+        clinicArea = await ClinicArea.findOne({ mohOfficeId, status: "active" });
+      }
+
+      if (!clinicArea) {
+        clinicArea = await ClinicArea.create({
+          name: targetZoneName,
+          type: "MCH_CLINIC",
+          status: "active",
+          mohOfficeId,
+          createdBy: req.user?._id || req.user?.id,
+        });
+      }
     }
 
     // 3. Atomically generate unique username based on role prefix
@@ -135,12 +162,13 @@ async function createStaff(req, res) {
     const passwordHash = await hashPassword(temporaryPassword, 10);
 
     // 6. Save staff record to database (mohOfficeId set strictly from req.user, never from req.body)
+    const assignedZone = (zone || clinicArea?.name || "Main Clinic").trim();
     const staff = new Staff({
       fullName,
       role,
-      clinicAreaId: clinicArea._id,
+      clinicAreaId: clinicArea?._id,
       mohOfficeId,
-      zone: clinicArea.name,
+      zone: assignedZone,
       phone,
       email: targetEmail,
       username,
@@ -234,6 +262,14 @@ async function resendCredentials(req, res) {
 
     staff.passwordHash = newPasswordHash;
     staff.mustResetPassword = true;
+
+    // Ensure clinicAreaId is populated if missing on legacy records
+    if (!staff.clinicAreaId && staff.mohOfficeId) {
+      const fallbackClinic = await ClinicArea.findOne({ mohOfficeId: staff.mohOfficeId, status: "active" });
+      if (fallbackClinic) {
+        staff.clinicAreaId = fallbackClinic._id;
+      }
+    }
 
     // 2. Prepare email
     const emailContent = buildStaffCredentialsEmail({
@@ -573,6 +609,25 @@ async function deleteStaff(req, res) {
   }
 }
 
+/**
+ * POST /api/moh/staff/test-email
+ * Diagnostic endpoint to test SMTP email configuration.
+ */
+async function testEmailDelivery(req, res) {
+  const targetEmail = req.body?.to || req.user?.email || "praveenpasindu296@gmail.com";
+  const emailResult = await sendEmail({
+    to: targetEmail,
+    subject: "MatriCare MOH Office - Email System Diagnostic Test",
+    text: "This is a diagnostic test email from MatriCare to verify that email delivery is working properly.",
+    html: "<div style='font-family:sans-serif;padding:20px;background:#f5f3ff;border-radius:8px;'><h2 style='color:#7b4fe0;'>MatriCare Email Service Test</h2><p>Your SMTP email delivery service is working correctly!</p><p>Timestamp: " + new Date().toISOString() + "</p></div>",
+  });
+
+  return res.status(emailResult.success ? 200 : 500).json({
+    recipient: targetEmail,
+    ...emailResult,
+  });
+}
+
 module.exports = {
   validateStaffInput,
   validateResetPasswordInput,
@@ -584,5 +639,6 @@ module.exports = {
   resetPassword,
   getAllStaff,
   getStaffById,
+  testEmailDelivery,
 };
 

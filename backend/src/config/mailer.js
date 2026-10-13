@@ -8,15 +8,33 @@ require("dotenv").config();
 
 // Create Nodemailer transporter supporting Brevo or Gmail SMTP
 function createTransporter() {
-  // Option A: Brevo (or custom SMTP provider)
-  if (process.env.BREVO_SMTP_KEY || process.env.SMTP_HOST) {
+  const isExplicitGmail = process.env.EMAIL_PROVIDER === "gmail";
+  const hasGmailCreds = Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  const hasBrevo = Boolean(process.env.BREVO_SMTP_KEY || (process.env.SMTP_HOST && process.env.SMTP_HOST !== "localhost"));
+
+  // Option A: Gmail SMTP (if requested or if Gmail creds configured without Brevo)
+  if (isExplicitGmail || (hasGmailCreds && !hasBrevo)) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
+  }
+
+  // Option B: Brevo (or custom SMTP provider)
+  if (hasBrevo) {
     return nodemailer.createTransport({
       host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
       port: Number(process.env.SMTP_PORT) || 587,
       secure: false,
-      connectionTimeout: 5000, // 5s connection limit
-      greetingTimeout: 5000,
-      socketTimeout: 6000,
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
       auth: {
         user: process.env.SMTP_USER || process.env.BREVO_USER || process.env.GMAIL_USER,
         pass: process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS,
@@ -24,16 +42,24 @@ function createTransporter() {
     });
   }
 
-  // Option B: Gmail SMTP
+  // Fallback: Gmail if any credentials exist
+  if (hasGmailCreds) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
+  }
+
+  // No provider configured: fallback to unauthenticated local
   return nodemailer.createTransport({
-    service: "gmail",
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 6000,
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
+    host: "localhost",
+    port: 25,
   });
 }
 
@@ -43,16 +69,18 @@ const transporter = createTransporter();
  * Verify transporter configuration on startup (optional helper).
  */
 async function verifyTransporter() {
-  const isBrevo = Boolean(process.env.BREVO_SMTP_KEY || process.env.SMTP_HOST);
-  const hasGmail = Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  const isExplicitGmail = process.env.EMAIL_PROVIDER === "gmail";
+  const hasGmailCreds = Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  const hasBrevo = Boolean(process.env.BREVO_SMTP_KEY || (process.env.SMTP_HOST && process.env.SMTP_HOST !== "localhost"));
 
-  if (!isBrevo && !hasGmail) {
+  if (!hasBrevo && !hasGmailCreds) {
     console.warn("⚠ No email provider configured (Gmail or Brevo). Outgoing emails will fail.");
     return false;
   }
   try {
     await transporter.verify();
-    console.log(`✔ ${isBrevo ? "Brevo SMTP" : "Gmail SMTP"} Transporter ready to send messages.`);
+    const providerName = isExplicitGmail || (!hasBrevo && hasGmailCreds) ? "Gmail SMTP" : "Brevo SMTP";
+    console.log(`✔ ${providerName} Transporter verified and ready to send messages.`);
     return true;
   } catch (err) {
     console.warn("⚠ SMTP verification warning:", err.message);
@@ -89,7 +117,7 @@ async function sendEmail({ to, subject, html, text }) {
     console.log(`✔ Email delivered to ${to} (MessageID: ${info.messageId})`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`❌ Email delivery failed to ${to}:`, error.message);
+    console.error(`❌ Email delivery failed to ${to}:`, error.message, error.response || "");
     return { success: false, error: error.message };
   }
 }

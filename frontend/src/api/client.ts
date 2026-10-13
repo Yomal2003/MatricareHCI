@@ -1,11 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 export function getApiBaseUrl(): string {
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location) {
+    const host = window.location.hostname || "localhost";
+    return `http://${host}:4000`;
+  }
+
   const configured = (Constants.expoConfig?.extra as any)?.apiUrl;
   if (configured) return configured;
 
-  return "http://192.168.8.131:4000";
+  return "http://192.168.1.14:4000";
 }
 
 export const API_URL: string = getApiBaseUrl();

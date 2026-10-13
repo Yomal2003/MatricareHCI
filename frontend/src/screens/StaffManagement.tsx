@@ -460,7 +460,7 @@ export function StaffManagement({
       showToast(
         res.emailStatus === "sent"
           ? `Saved to database! Username: ${res.username} (Credentials emailed)`
-          : `Saved to database! Username: ${res.username}`
+          : `Saved to database! Username: ${res.username} (Email delivery failed)`
       );
     } catch (err: any) {
       console.warn("Failed to save to database via API:", err.message);

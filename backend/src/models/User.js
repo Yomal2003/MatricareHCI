@@ -3,7 +3,16 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
-
+    role: {
+      type: String,
+      enum: ["phm", "nursing", "moh", "mother", "family_member"],
+      lowercase: true,
+      trim: true,
+    },
+    mohOfficeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MohOffice",
+    },
     name: { type: String, required: true, trim: true },
     staffId: { type: String, unique: true, sparse: true, uppercase: true, trim: true }, // staff login
     phone: { type: String, unique: true, sparse: true, trim: true }, // mother/family login (OTP)
