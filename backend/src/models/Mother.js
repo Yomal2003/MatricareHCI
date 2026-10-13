@@ -37,6 +37,12 @@ const motherSchema = new mongoose.Schema(
     familyNotificationsEnabled: { type: Boolean, default: false },
     family: [familyMemberSchema],
     vitals: { weight: Number, bp: String, hb: Number, updatedAt: Date },
+    deleteAudit: {
+      isDeleted: { type: Boolean, default: false },
+      deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      reason: String,
+      deletedAt: Date,
+    },
   },
   { timestamps: true, toJSON: { virtuals: true } },
 );

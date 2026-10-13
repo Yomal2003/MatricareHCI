@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { api } from "../api/client";
 
 // ─────────────────────────────────────────────────────────────
 // DESIGN TOKENS (Matching MOH Dashboard Design System)
@@ -229,7 +230,7 @@ export function MOHReportsScreen({
   };
 
   // Generate Report Handler (Screen 1 -> Screen 2)
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     let title = "";
     let periodOrZone = "";
     let zoneName = "District Wide";
@@ -246,15 +247,32 @@ export function MOHReportsScreen({
       title = `${selectedZone} Report`;
     }
 
+    const period = new Date().toISOString().slice(0, 7);
+    let metrics = { compliance: 0, immunization: 0, highRisk: 0, missed: 0 };
+    try {
+      const [summary, missedReport] = await Promise.all([
+        api<{ compliance?: number; immunization?: number; highRisk?: number }>("/reports/summary"),
+        api<{ byCategory?: Array<{ count: number }> }>(`/reports/missed?period=${period}`),
+      ]);
+      metrics = {
+        compliance: Number(summary.compliance || 0),
+        immunization: Number(summary.immunization || 0),
+        highRisk: Number(summary.highRisk || 0),
+        missed: (missedReport.byCategory || []).reduce((total, row) => total + Number(row.count || 0), 0),
+      };
+    } catch {
+      showToast("Could not load live report data. Showing zero values until the API is available.");
+    }
+
     setActiveReportData({
       title,
       periodOrZone,
       timestamp: "Generated today at 2:45 PM • Official Return",
       type: reportType,
-      compliance: selectedZone === "Hella" ? 68 : selectedZone === "Baevi" ? 85 : 79,
-      immunization: 93,
-      highRisk: selectedZone === "Hella" ? 6 : 18,
-      missed: selectedZone === "Hella" ? 12 : 33,
+      compliance: metrics.compliance,
+      immunization: metrics.immunization,
+      highRisk: metrics.highRisk,
+      missed: metrics.missed,
       zoneName,
     });
 
