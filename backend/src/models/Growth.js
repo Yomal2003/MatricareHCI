@@ -6,7 +6,9 @@ const growthSchema = new mongoose.Schema(
     date: { type: Date, default: Date.now },
     weight: Number, // kg
     height: Number, // cm
+    headCircumference: Number, // cm
     muac: Number,
+    notes: String,
     recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     localId: { type: String, index: true, sparse: true },
   },

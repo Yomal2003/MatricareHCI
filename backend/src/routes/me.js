@@ -1,11 +1,97 @@
 // Mother-facing endpoints: a mother can only ever see her own data.
 const router = require("express").Router();
 const mongoose = require("mongoose");
-const { Mother, Appointment, Visit, Immunization, Child, User, FamilyNotification } = require("../models");
+const { Mother, Appointment, Visit, Immunization, Child, User, FamilyNotification, Growth, QueueEntry } = require("../models");
 const { authorize } = require("../middleware/auth");
 const { ah, HttpError } = require("../utils/http");
 
 const FAMILY_RELATIONS = ["Father", "Mother", "Husband", "Wife", "Son", "Daughter", "Brother", "Sister", "Guardian", "Other"];
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+async function getMotherQueueInfo(mother) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const children = await Child.find({ mother: mother._id, "deleteAudit.isDeleted": { $ne: true } });
+  const childIds = children.map((c) => c._id);
+  const motherName = mother.name || "";
+  const firstName = motherName.split(/\s+/)[0] || "";
+
+  const nameConditions = [
+    { motherName: new RegExp(escapeRegex(motherName), "i") },
+    { name: new RegExp(escapeRegex(motherName), "i") },
+    { childName: new RegExp(escapeRegex(motherName), "i") },
+  ];
+  if (firstName.length >= 3) {
+    nameConditions.push({ motherName: new RegExp(`\\b${escapeRegex(firstName)}\\b`, "i") });
+    nameConditions.push({ name: new RegExp(`Baby of ${escapeRegex(firstName)}`, "i") });
+    nameConditions.push({ childName: new RegExp(`Baby of ${escapeRegex(firstName)}`, "i") });
+  }
+
+  const myEntry = await QueueEntry.findOne({
+    day: todayStr,
+    $or: [
+      { mother: mother._id },
+      ...(childIds.length ? [{ child: { $in: childIds } }] : []),
+      ...nameConditions,
+    ],
+  }).sort({ updatedAt: -1, token: 1 });
+
+  const callingEntry = await QueueEntry.findOne({
+    day: todayStr,
+    status: "calling",
+  }).sort({ updatedAt: -1 });
+
+  const servingEntry = !callingEntry ? await QueueEntry.findOne({
+    day: todayStr,
+    status: "now-serving",
+  }).sort({ updatedAt: -1 }) : null;
+
+  const activeClinicCall = callingEntry || servingEntry;
+
+  let waitingAhead = 0;
+  if (myEntry && myEntry.status === "waiting") {
+    waitingAhead = await QueueEntry.countDocuments({
+      day: todayStr,
+      clinic: myEntry.clinic,
+      status: "waiting",
+      token: { $lt: myEntry.token },
+    });
+  }
+
+  const isBeingCalled = Boolean(
+    myEntry && (
+      myEntry.status === "calling" ||
+      (callingEntry && String(callingEntry._id) === String(myEntry._id)) ||
+      (callingEntry && callingEntry.token === myEntry.token)
+    )
+  );
+
+  return {
+    hasToken: Boolean(myEntry),
+    myToken: myEntry ? {
+      id: String(myEntry._id),
+      token: myEntry.token,
+      name: myEntry.childName || myEntry.name,
+      motherName: myEntry.motherName || mother.name,
+      type: myEntry.type,
+      reason: myEntry.reason,
+      status: myEntry.status,
+      clinic: myEntry.clinic,
+      day: myEntry.day,
+    } : null,
+    isBeingCalled,
+    isNowServing: Boolean(myEntry && myEntry.status === "now-serving"),
+    waitingAhead,
+    currentlyCalling: activeClinicCall ? {
+      id: String(activeClinicCall._id),
+      token: activeClinicCall.token,
+      name: activeClinicCall.childName || activeClinicCall.name,
+      motherName: activeClinicCall.motherName,
+      status: activeClinicCall.status,
+      clinic: activeClinicCall.clinic,
+      type: activeClinicCall.type,
+    } : null,
+  };
+}
 
 async function myMother(req) {
   const m = await Mother.findById(req.user.mother);
@@ -64,13 +150,34 @@ function validateFamilyInput(body, { partial = false } = {}) {
 }
 
 router.get("/summary", authorize("self:read"), ah(async (req, res) => {
-  const mother = await myMother(req);
-  const next = await Appointment.findOne({ mother: mother._id, status: "upcoming", date: { $gte: new Date() } }).sort({ date: 1 });
+  const mother = await Mother.findById(req.user.mother).populate("assignedPhm", "name staffId phone badge area locations");
+  if (!mother) throw new HttpError(404, "No mother profile linked to this account");
+  const [next, queue] = await Promise.all([
+    Appointment.findOne({
+      mother: mother._id,
+      status: { $in: ["confirmed", "upcoming", "pending"] },
+      date: { $gte: new Date(Date.now() - 24 * 3600 * 1000) },
+    }).sort({ date: 1 }),
+    getMotherQueueInfo(mother),
+  ]);
   res.json({
     mother,
     weeks: mother.weeks,
-    nextAppt: next && { date: next.date.toISOString().slice(0, 10), place: next.place, type: next.type },
+    nextAppt: next && {
+      date: next.date.toISOString().slice(0, 10),
+      time: new Date(next.date).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      place: next.place || "MOH Clinic",
+      type: next.type,
+      status: next.status,
+    },
+    queue,
   });
+}));
+
+router.get("/queue", authorize("self:read"), ah(async (req, res) => {
+  const mother = await myMother(req);
+  const queue = await getMotherQueueInfo(mother);
+  res.json(queue);
 }));
 
 router.get("/appointments", authorize("self:read"), ah(async (req, res) => {
@@ -80,7 +187,7 @@ router.get("/appointments", authorize("self:read"), ah(async (req, res) => {
 
 router.post("/appointments", authorize("self:appointments"), ah(async (req, res) => {
   const mother = await myMother(req);
-  const { type, date, place, notes, category } = req.body || {};
+  const { type, date, place, notes, category, targetRole } = req.body || {};
   const appointmentDate = new Date(date);
   if (typeof type !== "string" || !type.trim() || type.trim().length > 120) throw new HttpError(400, "Appointment type must be 1 to 120 characters");
   if (typeof date !== "string" || !date.trim() || Number.isNaN(appointmentDate.getTime())) throw new HttpError(400, "A valid appointment date and time are required");
@@ -93,11 +200,12 @@ router.post("/appointments", authorize("self:appointments"), ah(async (req, res)
     mother: mother._id,
     type: type.trim(),
     category: ["anc", "postnatal", "immunization", "growth", "home-visit", "scan"].includes(category) ? category : "anc",
+    targetRole: targetRole === "nursing" ? "nursing" : "phm",
     date: appointmentDate,
     place: typeof place === "string" ? place.trim() : "",
     notes: typeof notes === "string" ? notes.trim() : "",
     phmArea: mother.phmArea,
-    status: "upcoming",
+    status: "pending",
   });
   res.status(201).json(appointment);
 }));
@@ -155,12 +263,14 @@ router.delete("/appointments/:id", authorize("self:appointments"), ah(async (req
 
 router.get("/records", authorize("self:read"), ah(async (req, res) => {
   const mother = await myMother(req);
-  const children = await Child.find({ mother: mother._id });
-  const [visits, immunizations] = await Promise.all([
+  const children = await Child.find({ mother: mother._id, "deleteAudit.isDeleted": { $ne: true } });
+  const childIds = children.map((c) => c._id);
+  const [visits, immunizations, growth] = await Promise.all([
     Visit.find({ mother: mother._id }).sort({ date: -1 }).limit(50),
-    Immunization.find({ $or: [{ mother: mother._id }, { child: { $in: children.map((c) => c._id) } }] }).sort({ date: -1 }),
+    Immunization.find({ $or: [{ mother: mother._id }, { child: { $in: childIds } }] }).sort({ date: -1 }),
+    Growth.find({ child: { $in: childIds } }).sort({ date: -1 }),
   ]);
-  res.json({ vitals: mother.vitals, visits, immunizations, children });
+  res.json({ vitals: mother.vitals, visits, immunizations, growth, children });
 }));
 
 router.get("/family", authorize("self:consent"), ah(async (req, res) => {

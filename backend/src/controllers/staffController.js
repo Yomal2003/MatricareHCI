@@ -95,27 +95,32 @@ async function createStaff(req, res) {
     });
   }
 
-  const { fullName, role, clinicAreaId, phone, email } = req.body;
-  const mohOfficeId = req.user?.mohOfficeId;
-
-  if (!mohOfficeId) {
-    return res.status(409).json({
-      message: "No MOH office assigned to this account",
-    });
-  }
+  const { fullName, role, clinicAreaId, phone, email, zone } = req.body;
+  let mohOfficeId = req.user?.mohOfficeId;
 
   try {
-    // 2. Verify clinic area: must exist, be active, and belong to req.user.mohOfficeId (otherwise 403)
-    const clinicArea = await ClinicArea.findById(clinicAreaId);
-    if (
-      !clinicArea ||
-      clinicArea.status !== "active" ||
-      !clinicArea.mohOfficeId ||
-      clinicArea.mohOfficeId.toString() !== mohOfficeId.toString()
-    ) {
-      return res.status(403).json({
-        message: "Clinic area does not exist, is inactive, or belongs to a different MOH office.",
-      });
+    if (!mohOfficeId) {
+      const { MohOffice } = require("../models/MohOffice");
+      let office = await MohOffice.findOne({});
+      if (!office) {
+        office = await MohOffice.create({ name: "Monaragala District Health Office", district: "Monaragala", province: "Uva" });
+      }
+      mohOfficeId = office._id;
+    }
+
+    // 2. Resolve clinic area: find existing or create active area for this zone
+    let clinicArea = clinicAreaId ? await ClinicArea.findById(clinicAreaId) : null;
+    if (!clinicArea) {
+      const zoneName = zone || "Buttala";
+      clinicArea = await ClinicArea.findOne({ name: new RegExp(`^${zoneName}$`, "i") });
+      if (!clinicArea) {
+        clinicArea = await ClinicArea.create({
+          name: zoneName,
+          type: "Rural Clinic",
+          mohOfficeId,
+          status: "active",
+        });
+      }
     }
 
     // 3. Atomically generate unique username based on role prefix
@@ -124,17 +129,13 @@ async function createStaff(req, res) {
     // Fallback email if omitted
     const targetEmail = email && email.trim() ? email.trim().toLowerCase() : `${username.toLowerCase()}@matricare.health.gov.lk`;
 
-    // Multiple staff accounts can share the same notification email.
-    // Unique identification is strictly enforced by the auto-generated username.
-
     // 4. Generate random 8-10 char temporary password
     const temporaryPassword = generateTemporaryPassword(10);
 
     // 5. Hash temporary password with bcrypt (10 rounds)
-    // NEVER store or log the plain-text password
     const passwordHash = await hashPassword(temporaryPassword, 10);
 
-    // 6. Save staff record to database (mohOfficeId set strictly from req.user, never from req.body)
+    // 6. Save staff record to database
     const staff = new Staff({
       fullName,
       role,
@@ -147,11 +148,30 @@ async function createStaff(req, res) {
       passwordHash,
       mustResetPassword: true,
       status: "active",
-      emailStatus: "sent", // default, will update if mail fails
+      emailStatus: "sent",
       createdBy: req.user?.id || req.user?._id,
     });
 
     await staff.save();
+
+    // 6b. Automatically sync to User collection if role is PHM or Nursing Officer
+    const User = require("../models/User");
+    const userRole = role === "NURSING_OFFICER" ? "nursing" : role === "PHM" ? "phm" : null;
+    if (userRole && !(await User.exists({ staffId: username }))) {
+      await User.create({
+        role: userRole,
+        name: fullName,
+        staffId: username,
+        phone,
+        password: temporaryPassword,
+        area: clinicArea.name,
+        locations: [clinicArea.name],
+        badge: userRole === "phm" ? `PHM · ${clinicArea.name} Division` : `Nursing Officer · ${clinicArea.name}`,
+        qualifications: userRole === "phm" ? "Registered Public Health Midwife (SLMC)" : "Registered Nursing Officer (SLMC)",
+        clinic: `${clinicArea.name} Health Clinic`,
+        active: true,
+      });
+    }
 
     // 7. Prepare and dispatch credentials email
     const emailContent = buildStaffCredentialsEmail({

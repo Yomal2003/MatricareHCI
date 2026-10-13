@@ -7,6 +7,8 @@ const immunizationSchema = new mongoose.Schema(
     vaccine: { type: String, required: true }, // BCG, OPV, Penta, MMR, JE, DT, TT1...
     dose: Number,
     batch: String,
+    expiryDate: String,
+    notes: String,
     date: { type: Date, default: Date.now },
     recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     localId: { type: String, index: true, sparse: true },

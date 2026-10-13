@@ -94,13 +94,21 @@ export default function App() {
     setScreen(ROLE_CONFIG[result.user.role].homeScreen);
   }, []);
 
+  const staffLogin = useCallback(async (staffId: string, password: string) => {
+    const res = await api<{ token: string; user: { id: string; name: string; role: Role } }>("/auth/login", { method: "POST", body: { staffId: staffId.trim(), password } });
+    setToken(res.token);
+    setUser(res.user);
+    setRole(res.user.role);
+    setScreen(ROLE_CONFIG[res.user.role].homeScreen);
+  }, []);
+
   const logout = useCallback(() => { setToken(null); setRole(null); setUser(null); setScreen("login"); }, []);
 
   const value = useMemo(() => ({
     role, user, language, isOnline: online, isSyncing, currentScreen, wireframeMode, showLanguageModal, pending,
-    navigate, login, logout, requestPhoneOtp, verifyPhoneOtp, setLanguage, setWireframeMode, setShowLanguageModal, refreshPending,
+    navigate, login, staffLogin, logout, requestPhoneOtp, verifyPhoneOtp, setLanguage, setWireframeMode, setShowLanguageModal, refreshPending,
     toggleOnline: () => setForcedOffline((v) => !v),
-  }), [role, user, language, online, isSyncing, currentScreen, wireframeMode, showLanguageModal, pending, navigate, login, logout, requestPhoneOtp, verifyPhoneOtp]);
+  }), [role, user, language, online, isSyncing, currentScreen, wireframeMode, showLanguageModal, pending, navigate, login, staffLogin, logout, requestPhoneOtp, verifyPhoneOtp]);
 
   const Current = ROUTES[currentScreen].C;
   return (
