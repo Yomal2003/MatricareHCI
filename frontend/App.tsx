@@ -6,6 +6,7 @@ import { AppCtx } from "./src/context";
 import type { Language, Role, Screen } from "./src/types";
 import { ROLE_CONFIG } from "./src/types";
 import { api, flushPending, getPending, setToken } from "./src/api/client";
+import { onUnauthorized } from "./src/api/mohApi";
 import { Splash, Login } from "./src/screens/SplashLogin";
 import Settings from "./src/screens/Settings";
 import { MotherHome, MotherAppointments, MotherRecords, MotherConsent } from "./src/screens/Mother";
@@ -103,6 +104,12 @@ export default function App() {
   }, []);
 
   const logout = useCallback(() => { setToken(null); setRole(null); setUser(null); setScreen("login"); }, []);
+
+  useEffect(() => {
+    return onUnauthorized(() => {
+      logout();
+    });
+  }, [logout]);
 
   const value = useMemo(() => ({
     role, user, language, isOnline: online, isSyncing, currentScreen, wireframeMode, showLanguageModal, pending,

@@ -33,6 +33,8 @@ const motherSchema = new mongoose.Schema(
     riskFlags: [String],
     bloodGroup: String,
     assignedPhm: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    clinicAreaId: { type: mongoose.Schema.Types.ObjectId, ref: "ClinicArea", index: true },
+    mohOfficeId: { type: mongoose.Schema.Types.ObjectId, ref: "MohOffice", index: true },
     status: { type: String, enum: ["pregnant", "postnatal", "closed"], default: "pregnant" },
     familyNotificationsEnabled: { type: Boolean, default: false },
     family: [familyMemberSchema],
@@ -52,5 +54,6 @@ motherSchema.virtual("weeks").get(function () {
   return Math.max(0, Math.floor((Date.now() - this.lmp.getTime()) / (7 * 864e5)));
 });
 motherSchema.index({ name: "text", code: "text", village: "text" });
+motherSchema.index({ mohOfficeId: 1, clinicAreaId: 1, risk: 1, status: 1 });
 
 module.exports = mongoose.model("Mother", motherSchema);

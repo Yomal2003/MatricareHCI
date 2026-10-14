@@ -2,7 +2,35 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+let customApiUrl: string | null = null;
+const CUSTOM_URL_KEY = "matricare.customApiUrl";
+
+// Hydrate cached customApiUrl from storage
+AsyncStorage.getItem(CUSTOM_URL_KEY)
+  .then((stored) => {
+    if (stored) customApiUrl = stored.trim().replace(/\/+$/, "");
+  })
+  .catch(() => {});
+
+export function setCustomApiUrl(url: string | null): Promise<void> {
+  customApiUrl = url ? url.trim().replace(/\/+$/, "") : null;
+  if (customApiUrl) {
+    return AsyncStorage.setItem(CUSTOM_URL_KEY, customApiUrl).catch(() => {});
+  } else {
+    return AsyncStorage.removeItem(CUSTOM_URL_KEY).catch(() => {});
+  }
+}
+
+export function getCustomApiUrl(): string | null {
+  return customApiUrl;
+}
+
 export function getApiBaseUrl(): string {
+  // 0. Explicit user-configured URL overrides all auto-detection
+  if (customApiUrl) {
+    return customApiUrl;
+  }
+
   // 1. Web browser: connect to backend on same host as webpage (e.g., localhost or LAN IP)
   if (Platform.OS === "web") {
     if (typeof window !== "undefined" && window.location?.hostname) {
@@ -11,25 +39,57 @@ export function getApiBaseUrl(): string {
     return "http://localhost:4000";
   }
 
-  // 2. Native mobile (Expo Go): connect to backend host using Expo bundler IP
+  // 2. Native mobile (Expo Go): connect to backend host using Expo bundler IP ONLY if it is an IPv4 address
   const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost;
   if (hostUri) {
-    const ip = hostUri.split(":")[0];
-    if (ip) return `http://${ip}:4000`;
+    const rawHost = hostUri.split(":")[0];
+    // Check if rawHost is an IPv4 address (e.g. 10.x.x.x, 192.168.x.x, 172.x.x.x).
+    // NEVER attach :4000 to tunnel hostnames (e.g. *.exp.direct or *.ngrok.app) as they only tunnel port 8081.
+    const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(rawHost);
+    if (isIpv4) {
+      return `http://${rawHost}:4000`;
+    }
   }
 
   // 3. Configured via app.json
   const configured = (Constants.expoConfig?.extra as any)?.apiUrl;
-  if (configured && !configured.includes("192.168.8.131")) return configured;
+  if (
+    configured &&
+    !configured.includes("192.168.8.131") &&
+    !configured.includes("192.168.8.198")
+  ) {
+    return configured;
+  }
 
-  return "http://192.168.8.198:4000";
+  return "http://10.56.15.217:4000";
+}
+
+export async function testApiConnection(url?: string): Promise<{ ok: boolean; status?: number; error?: string }> {
+  const target = (url || getApiBaseUrl()).replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  try {
+    const res = await fetch(`${target}/health`, { signal: controller.signal });
+    return { ok: res.ok, status: res.status };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "Connection failed" };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const API_URL: string = getApiBaseUrl();
 if (__DEV__) console.info(`[MatriCare] API base URL: ${API_URL}`);
 
 let token: string | null = null;
-export const setToken = (t: string | null) => (token = t);
+export const setToken = (t: string | null) => {
+  token = t;
+  if (t) {
+    AsyncStorage.setItem("matricare.token", t).catch(() => {});
+  } else {
+    AsyncStorage.removeItem("matricare.token").catch(() => {});
+  }
+};
 export const getToken = () => token;
 
 export async function api<T = any>(

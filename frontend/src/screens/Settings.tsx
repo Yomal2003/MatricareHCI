@@ -1,9 +1,11 @@
 import React, { useState } from "react";
-import { Pressable, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Switch, Text, View } from "react-native";
 import { useApp } from "../context";
 import { Language, ROLE_CONFIG, T } from "../types";
 import Shell from "../components/Shell";
 import { Button, Card, Row, SectionTitle, s, usePalette } from "../components/ui";
+import { getApiBaseUrl, testApiConnection } from "../api/client";
+import { ServerConfigModal } from "../components/MohStateComponents";
 
 const LANGS: { k: Language; label: string; sub: string }[] = [
   { k: "en", label: "English", sub: "English" }, { k: "si", label: "සිංහල", sub: "Sinhala" }, { k: "ta", label: "தமிழ்", sub: "Tamil" },
@@ -14,6 +16,22 @@ export default function Settings() {
   const p = usePalette();
   const t = T[language];
   const [notif, setNotif] = useState(true);
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [testingServer, setTestingServer] = useState(false);
+  const [serverStatus, setServerStatus] = useState<string | null>(null);
+
+  const checkConnection = async () => {
+    setTestingServer(true);
+    setServerStatus(null);
+    const res = await testApiConnection();
+    setTestingServer(false);
+    if (res.ok) {
+      setServerStatus("Online (200 OK)");
+    } else {
+      setServerStatus("Offline: " + (res.error || "Cannot reach server"));
+    }
+  };
+
   return (
     <Shell title={t.settings}>
       <Pressable onPress={() => navigate(ROLE_CONFIG[role!].homeScreen)}><Text style={[s.action, { color: p.color, marginBottom: 12 }]}>‹ {t.home}</Text></Pressable>
@@ -29,7 +47,37 @@ export default function Settings() {
         <Row icon="notifications" title={t.notifications} right={<Switch value={notif} onValueChange={setNotif} trackColor={{ true: p.color }} />} />
         <Row icon="grid" title="Wireframe mode" sub="Grayscale · grid · component labels" right={<Switch value={wireframeMode} onValueChange={setWireframeMode} trackColor={{ true: p.color }} />} />
       </Card>
+      <SectionTitle>Server Connection</SectionTitle>
+      <Card label="BACKEND API">
+        <Row
+          icon="globe-outline"
+          title="Server URL"
+          sub={getApiBaseUrl()}
+          onPress={() => setShowServerModal(true)}
+          right={<Text style={{ fontSize: 13, color: p.color, fontWeight: "600" }}>Change</Text>}
+        />
+        <Row
+          icon="pulse-outline"
+          title="Health Check"
+          sub={serverStatus || "Tap to test connection"}
+          onPress={checkConnection}
+          right={
+            testingServer ? (
+              <ActivityIndicator size="small" color={p.color} />
+            ) : (
+              <Text style={{ fontSize: 13, color: serverStatus?.startsWith("Online") ? "#16A34A" : p.color, fontWeight: "600" }}>
+                {serverStatus?.startsWith("Online") ? "✔ Verified" : "Test"}
+              </Text>
+            )
+          }
+        />
+      </Card>
       <Button title={t.logout} icon="log-out" variant="ghost" onPress={logout} />
+      <ServerConfigModal
+        visible={showServerModal}
+        onClose={() => setShowServerModal(false)}
+        onSave={() => setServerStatus(null)}
+      />
     </Shell>
   );
 }

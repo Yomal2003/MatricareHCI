@@ -18,6 +18,9 @@ const userSchema = new mongoose.Schema(
     mother: { type: mongoose.Schema.Types.ObjectId, ref: "Mother" }, // linked profile for role=mother
     familyMemberId: { type: mongoose.Schema.Types.ObjectId }, // linked subdocument id for role=family_member
 
+    mohOfficeId: { type: mongoose.Schema.Types.ObjectId, ref: "MohOffice", index: true },
+    clinicAreaId: { type: mongoose.Schema.Types.ObjectId, ref: "ClinicArea", index: true },
+
     active: { type: Boolean, default: true },
   },
   { timestamps: true },

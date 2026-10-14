@@ -34,6 +34,7 @@ app.use("/alerts", require("./routes/alerts"));
 app.use("/reports", require("./routes/reports"));
 app.use("/users", require("./routes/users"));
 app.use("/api/moh", require("./routes/mohOfficeRoutes"));
+app.use("/api/moh", require("./routes/mohDashboardRoutes"));
 app.use("/api/moh/clinic-areas", require("./routes/clinicAreaRoutes"));
 app.use("/api/moh/staff", require("./routes/staffRoutes"));
 app.use("/api/auth/reset-password", require("./controllers/staffController").validateResetPasswordInput, require("./controllers/staffController").resetPassword);

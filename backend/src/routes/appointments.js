@@ -203,6 +203,8 @@ router.post("/", authorize("appointments:write"), ah(async (req, res) => {
     status: initialStatus,
     mother: mother._id,
     phmArea: mother.phmArea || mother.village,
+    clinicAreaId: mother.clinicAreaId || req.user?.clinicAreaId,
+    mohOfficeId: mother.mohOfficeId || req.user?.mohOfficeId,
     child: req.body.childId || undefined,
   });
 

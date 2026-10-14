@@ -19,8 +19,17 @@ async function authenticate(req, _res, next) {
       throw new HttpError(401, "Unauthenticated");
     }
     const payload = jwt.verify(token, env.jwtSecret);
-    const user = await User.findById(payload.sub || payload.id);
-    if (!user || !user.active) throw new HttpError(401, "Account not found or disabled");
+    let user = await User.findById(payload.sub || payload.id);
+    if (!user) {
+      const { Staff } = require("../models/Staff");
+      const staff = await Staff.findById(payload.sub || payload.id);
+      if (staff && staff.status === "active") {
+        user = staff;
+      }
+    }
+    if (!user || user.active === false || user.status === "inactive") {
+      throw new HttpError(401, "Account not found or disabled");
+    }
     req.user = user;
     if (!req.user.mohOfficeId && payload.mohOfficeId) {
       req.user.mohOfficeId = payload.mohOfficeId;

@@ -1,10 +1,13 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
+  Linking,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,6 +22,20 @@ import { useApp } from "../context";
 import { Language, T } from "../types";
 import { StaffManagement } from "./StaffManagement";
 import { MOHReportsScreen } from "./MOHReportsScreen";
+import {
+  getMohDashboard,
+  getMohAlerts,
+  getMohAlertDetail,
+  getMohClinicAreas,
+  setAlertClinicAreaFilter,
+  getAlertClinicAreaFilter,
+} from "../api/mohApi";
+import {
+  DashboardSkeleton,
+  ErrorState,
+  EmptyState,
+  SkeletonBox,
+} from "../components/MohStateComponents";
 
 // Design Tokens & Palette
 const PRIMARY = "#7B4FE0";
@@ -45,166 +62,34 @@ const TEXT_MUTED = "#64748B";
 const TEXT_LIGHT = "#94A3B8";
 const BORDER_COLOR = "#EEF2F6";
 
-// Zone Compliance Data
-interface ZoneData {
-  id: string;
+// Live Data Types
+export interface ZoneComplianceItem {
+  clinicAreaId: string;
   name: string;
-  compliance: number;
-  color: string;
-  phmName: string;
-  phmPhone: string;
-  totalMothers: number;
-  highRiskCount: number;
-  overdueCount: number;
+  value: number | null;
+  visits: { done: number; scheduled: number };
 }
 
-const ZONES: ZoneData[] = [
-  {
-    id: "buttala",
-    name: "Buttala",
-    compliance: 81,
-    color: "#7B4FE0", // Purple
-    phmName: "Kamani Rathnayake",
-    phmPhone: "+94 77 123 4567",
-    totalMothers: 142,
-    highRiskCount: 4,
-    overdueCount: 2,
-  },
-  {
-    id: "hella",
-    name: "Hella",
-    compliance: 68,
-    color: "#EF4444", // Red
-    phmName: "Sunethra Bandara",
-    phmPhone: "+94 71 234 5678",
-    totalMothers: 98,
-    highRiskCount: 6,
-    overdueCount: 5,
-  },
-  {
-    id: "gonagala",
-    name: "Gonagala",
-    compliance: 77,
-    color: "#F59E0B", // Orange
-    phmName: "Priyanthi Silva",
-    phmPhone: "+94 76 345 6789",
-    totalMothers: 116,
-    highRiskCount: 3,
-    overdueCount: 3,
-  },
-  {
-    id: "baevi",
-    name: "Baevi",
-    compliance: 85,
-    color: "#10B981", // Green
-    phmName: "Nirosha Jayatilleke",
-    phmPhone: "+94 78 456 7890",
-    totalMothers: 130,
-    highRiskCount: 2,
-    overdueCount: 1,
-  },
-  {
-    id: "medawe",
-    name: "Medawe",
-    compliance: 72,
-    color: "#6366F1", // Indigo / purple
-    phmName: "Anoma Weerasinghe",
-    phmPhone: "+94 70 567 8901",
-    totalMothers: 104,
-    highRiskCount: 3,
-    overdueCount: 4,
-  },
-];
+export interface RecentActivityItem {
+  type: "high_risk" | "overdue" | "sync" | "record";
+  message: string;
+  createdAt: string;
+  refId?: string;
+}
 
-// Activity Feed Data
-interface ActivityItem {
-  id: string;
-  type: "danger" | "warning" | "success" | "info";
-  title: string;
-  detail: string;
-  time: string;
-  zone?: string;
-  badge?: string;
-  caseData?: {
-    patientName: string;
-    age: string;
-    weeks: string;
-    phm: string;
-    condition: string;
-    priority: "Urgent" | "Moderate" | "Informational";
+export interface DashboardData {
+  mohOffice: { id: string; name: string; district: string; province: string };
+  doctor: { fullName: string; profileImageUrl?: string | null };
+  indicators: {
+    visitCompliance: { value: number | null; target: number; trend: string | null };
+    immunizationCoverage: { value: number | null; target: number; trend: string | null };
+    highRiskCases: { value: number; change: number };
+    clinicAreas: { value: number };
   };
+  zoneCompliance: ZoneComplianceItem[];
+  districtAverage: number | null;
+  recentActivity: RecentActivityItem[];
 }
-
-const ACTIVITIES: ActivityItem[] = [
-  {
-    id: "act-1",
-    type: "danger",
-    title: "2 new high-risk cases flagged",
-    detail: "Dilani Kumari (BP 150/100 · 34 wks) & Nirosha (Reduced fetal movement)",
-    time: "2h ago",
-    zone: "Okkampitiya & Buttala",
-    badge: "Urgent",
-    caseData: {
-      patientName: "Dilani Kumari",
-      age: "28 yrs",
-      weeks: "34 weeks",
-      phm: "Kamani Rathnayake",
-      condition: "Severe gestational hypertension (BP 150/100 mmHg). Immediate referral to Base Hospital Monaragala recommended.",
-      priority: "Urgent",
-    },
-  },
-  {
-    id: "act-2",
-    type: "warning",
-    title: "Hella zone: 3 overdue mothers",
-    detail: "Missed third-trimester routine clinical checks > 14 days",
-    time: "5h ago",
-    zone: "Hella",
-    badge: "Attention",
-    caseData: {
-      patientName: "3 Overdue ANC Visits (Hella)",
-      age: "Cohorted",
-      weeks: "Trimester 3",
-      phm: "Sunethra Bandara",
-      condition: "Mothers overdue for mandatory ultrasound screening and oral glucose tolerance tests.",
-      priority: "Moderate",
-    },
-  },
-  {
-    id: "act-3",
-    type: "success",
-    title: "Oct eRHMIS sync completed",
-    detail: "142 field and clinical records synchronized with National eRHMIS gateway",
-    time: "Yesterday",
-    zone: "Monaragala District",
-    badge: "Synced",
-    caseData: {
-      patientName: "October eRHMIS Gateway Sync",
-      age: "N/A",
-      weeks: "Monthly Return",
-      phm: "District Field MID/MIS Unit",
-      condition: "Full data integrity validated: 142 records synced, 0 validation errors, checksum verified.",
-      priority: "Informational",
-    },
-  },
-  {
-    id: "act-4",
-    type: "info",
-    title: "Buttala clinic return submitted",
-    detail: "28 mothers examined · 4 specialist referrals successfully booked",
-    time: "2 days ago",
-    zone: "Buttala",
-    badge: "Completed",
-    caseData: {
-      patientName: "Buttala Clinic Monthly Return",
-      age: "28 Attendees",
-      weeks: "Routine Clinic",
-      phm: "Kamani Rathnayake",
-      condition: "All clinic returns recorded. 4 high-risk mothers routed to Consultant Obstetrician clinic.",
-      priority: "Informational",
-    },
-  },
-];
 
 // Circular Ring Donut Component
 function RingDonut({
@@ -215,16 +100,17 @@ function RingDonut({
   strokeWidth = 5.5,
   displayValue,
 }: {
-  value: number;
+  value: number | null | undefined;
   strokeColor: string;
   trackColor: string;
   size?: number;
   strokeWidth?: number;
   displayValue?: string | number;
 }) {
+  const numericValue = typeof value === "number" && !isNaN(value) ? Math.min(Math.max(0, value), 100) : 0;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - Math.min(value, 100) / 100);
+  const strokeDashoffset = circumference * (1 - numericValue / 100);
 
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
@@ -254,7 +140,7 @@ function RingDonut({
         />
       </Svg>
       <Text style={[styles.ringText, { color: strokeColor }]}>
-        {displayValue !== undefined ? displayValue : value}
+        {displayValue !== undefined ? displayValue : (value !== null && value !== undefined ? value : "—")}
       </Text>
     </View>
   );
@@ -264,11 +150,121 @@ function RingDonut({
 // MAIN DASHBOARD COMPONENT (MOHHome)
 // ----------------------------------------------------
 export function MOHHome() {
-  const { language, setLanguage, navigate, currentScreen } = useApp();
-  const [selectedZone, setSelectedZone] = useState<ZoneData | null>(null);
-  const [activeActivity, setActiveActivity] = useState<ActivityItem | null>(null);
+  const { language, setLanguage, navigate } = useApp();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [activeActivity, setActiveActivity] = useState<RecentActivityItem | null>(null);
   const [showLangModal, setShowLangModal] = useState(false);
   const [showIndicatorModal, setShowIndicatorModal] = useState<string | null>(null);
+
+  const fetchDashboard = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else if (!data) setLoading(true);
+    setError(null);
+    try {
+      const res = await getMohDashboard();
+      setData(res);
+    } catch (err: any) {
+      setError(err?.message || "Failed to load dashboard data");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [data]);
+
+  useEffect(() => {
+    fetchDashboard();
+  }, []);
+
+  const getComplianceColor = (val: number | null | undefined, target = 85) => {
+    if (val === null || val === undefined) return "#94A3B8";
+    if (val >= target) return SUCCESS;
+    if (val >= target - 10) return WARNING;
+    return DANGER;
+  };
+
+  const handleZonePress = (zone: ZoneComplianceItem) => {
+    setAlertClinicAreaFilter(zone.clinicAreaId);
+    navigate("moh-alerts");
+  };
+
+  const formatActivityTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      const diffMs = Date.now() - d.getTime();
+      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+      if (diffHrs < 1) return "Just now";
+      if (diffHrs < 24) return `${diffHrs}h ago`;
+      const days = Math.floor(diffHrs / 24);
+      if (days === 1) return "Yesterday";
+      if (days < 7) return `${days}d ago`;
+      return d.toLocaleDateString();
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "GOOD MORNING" : hour < 17 ? "GOOD AFTERNOON" : "GOOD EVENING";
+
+  if (loading && !data) {
+    return (
+      <View style={styles.screenContainer}>
+        <LinearGradient colors={["#7B4FE0", "#6B3FD4"]} style={styles.headerGradient}>
+          <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
+            <View style={styles.headerContent}>
+              <View style={styles.headerTopRow}>
+                <View style={styles.avatarWrapper}>
+                  <View style={styles.avatarCircle}><Ionicons name="person" size={26} color="#FFFFFF" /></View>
+                  <View style={styles.onlineDot} />
+                </View>
+                <View style={styles.headerNameCol}>
+                  <Text style={styles.greetingText}>{greeting}</Text>
+                  <Text style={styles.doctorName}>MOH Doctor</Text>
+                </View>
+              </View>
+            </View>
+          </SafeAreaView>
+        </LinearGradient>
+        <DashboardSkeleton />
+      </View>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <View style={styles.screenContainer}>
+        <LinearGradient colors={["#7B4FE0", "#6B3FD4"]} style={styles.headerGradient}>
+          <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
+            <View style={styles.headerContent}>
+              <View style={styles.headerTopRow}>
+                <View style={styles.avatarWrapper}>
+                  <View style={styles.avatarCircle}><Ionicons name="person" size={26} color="#FFFFFF" /></View>
+                </View>
+                <View style={styles.headerNameCol}>
+                  <Text style={styles.greetingText}>{greeting}</Text>
+                  <Text style={styles.doctorName}>MOH Doctor</Text>
+                </View>
+              </View>
+            </View>
+          </SafeAreaView>
+        </LinearGradient>
+        <ErrorState message={error} onRetry={() => fetchDashboard(false)} />
+      </View>
+    );
+  }
+
+  const indicators = data?.indicators;
+  const visitCompVal = indicators?.visitCompliance?.value;
+  const visitTarget = indicators?.visitCompliance?.target || 85;
+  const immVal = indicators?.immunizationCoverage?.value;
+  const immTarget = indicators?.immunizationCoverage?.target || 95;
+  const highRiskVal = indicators?.highRiskCases?.value ?? 0;
+  const highRiskChange = indicators?.highRiskCases?.change ?? 0;
+  const clinicAreasCount = indicators?.clinicAreas?.value ?? 0;
 
   return (
     <View style={styles.screenContainer}>
@@ -276,10 +272,17 @@ export function MOHHome() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        bounces={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchDashboard(true)}
+            colors={[PRIMARY]}
+            tintColor={PRIMARY}
+          />
+        }
       >
         {/* ==================================================== */}
-        {/* 1. HEADER (Purple Gradient, Profile, Pills, Icons)    */}
+        {/* 1. HEADER (Purple Gradient, Real Profile, Pills)     */}
         {/* ==================================================== */}
         <LinearGradient
           colors={["#7B4FE0", "#6B3FD4"]}
@@ -291,45 +294,34 @@ export function MOHHome() {
             <View style={styles.headerContent}>
               {/* Row 1: Profile & Action Icons */}
               <View style={styles.headerTopRow}>
-                {/* Profile Picture with Online Status Dot */}
                 <View style={styles.avatarWrapper}>
                   <View style={styles.avatarCircle}>
-                    {/* Placeholder doctor illustration */}
                     <Ionicons name="person" size={26} color="#FFFFFF" />
                   </View>
-                  {/* Small Green Online Status Dot at Top-Left */}
                   <View style={styles.onlineDot} />
                 </View>
 
-                {/* Greeting & Doctor's Name */}
+                {/* Greeting & Doctor's Real Name */}
                 <View style={styles.headerNameCol}>
-                  <Text style={styles.greetingText}>GOOD EVENING</Text>
-                  <Text style={styles.doctorName}>Dr. Pradeep Silva</Text>
+                  <Text style={styles.greetingText}>{greeting}</Text>
+                  <Text style={styles.doctorName}>{data?.doctor?.fullName || "MOH Doctor"}</Text>
                 </View>
 
                 {/* Top-Right Circular Action Buttons */}
                 <View style={styles.headerActionsRow}>
-                  {/* Globe / Language Icon Button */}
                   <Pressable
                     onPress={() => setShowLangModal(true)}
                     hitSlop={8}
-                    style={({ pressed }) => [
-                      styles.circularBtn,
-                      pressed && styles.circularBtnPressed,
-                    ]}
+                    style={({ pressed }) => [styles.circularBtn, pressed && styles.circularBtnPressed]}
                     accessibilityLabel="Language Switcher"
                   >
                     <Ionicons name="globe-outline" size={19} color="#FFFFFF" />
                   </Pressable>
 
-                  {/* Settings / Gear Icon Button */}
                   <Pressable
                     onPress={() => navigate("settings")}
                     hitSlop={8}
-                    style={({ pressed }) => [
-                      styles.circularBtn,
-                      pressed && styles.circularBtnPressed,
-                    ]}
+                    style={({ pressed }) => [styles.circularBtn, pressed && styles.circularBtnPressed]}
                     accessibilityLabel="Settings"
                   >
                     <Ionicons name="settings-outline" size={19} color="#FFFFFF" />
@@ -339,18 +331,13 @@ export function MOHHome() {
 
               {/* Row 2: Badges below doctor's name */}
               <View style={styles.pillsRow}>
-                {/* Semi-transparent White Pill: District */}
                 <View style={styles.districtPill}>
-                  <Ionicons
-                    name="location-sharp"
-                    size={12}
-                    color="#FFFFFF"
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text style={styles.districtPillText}>Monaragala District</Text>
+                  <Ionicons name="location-sharp" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.districtPillText}>
+                    {data?.mohOffice?.name || "MOH Office"} • {data?.mohOffice?.district || "District"}
+                  </Text>
                 </View>
 
-                {/* Role Tag Pill: MOH */}
                 <View style={styles.roleTagPill}>
                   <Text style={styles.roleTagPillText}>MOH</Text>
                 </View>
@@ -368,16 +355,12 @@ export function MOHHome() {
             {/* Card 1: Visit Compliance */}
             <Pressable
               onPress={() => setShowIndicatorModal("visit")}
-              style={({ pressed }) => [
-                styles.kpiCard,
-                styles.kpiCardHalf,
-                pressed && styles.cardPressed,
-              ]}
+              style={({ pressed }) => [styles.kpiCard, styles.kpiCardHalf, pressed && styles.cardPressed]}
             >
               <View style={styles.kpiHeaderRow}>
                 <Text style={styles.kpiLabel}>Visit Compliance</Text>
               </View>
-              <Text style={styles.kpiTarget}>Target: 85%</Text>
+              <Text style={styles.kpiTarget}>Target: {visitTarget}%</Text>
 
               {/* Horizontal Progress Bar & Right-Aligned Percentage */}
               <View style={styles.progressBarSection}>
@@ -385,34 +368,45 @@ export function MOHHome() {
                   <View
                     style={[
                       styles.progressBarFill,
-                      { width: "87%", backgroundColor: PRIMARY },
+                      {
+                        width: visitCompVal !== null && visitCompVal !== undefined ? `${Math.min(visitCompVal, 100)}%` : "0%",
+                        backgroundColor: getComplianceColor(visitCompVal, visitTarget),
+                      },
                     ]}
                   />
                 </View>
-                <Text style={[styles.progressValueText, { color: PRIMARY }]}>87%</Text>
+                <Text style={[styles.progressValueText, { color: getComplianceColor(visitCompVal, visitTarget) }]}>
+                  {visitCompVal !== null && visitCompVal !== undefined ? `${visitCompVal}%` : "No data yet"}
+                </Text>
               </View>
 
               <View style={styles.kpiSubBadgeRow}>
-                <View style={styles.pillGreenMini}>
-                  <Ionicons name="arrow-up" size={10} color={SUCCESS_TEXT} />
-                  <Text style={styles.pillGreenMiniText}>+2% above target</Text>
-                </View>
+                {visitCompVal !== null && visitCompVal !== undefined ? (
+                  <View style={visitCompVal >= visitTarget ? styles.pillGreenMini : styles.pillAmberMini}>
+                    <Ionicons
+                      name={visitCompVal >= visitTarget ? "arrow-up" : "arrow-down"}
+                      size={10}
+                      color={visitCompVal >= visitTarget ? SUCCESS_TEXT : WARNING_TEXT}
+                    />
+                    <Text style={visitCompVal >= visitTarget ? styles.pillGreenMiniText : styles.pillAmberMiniText}>
+                      {indicators?.visitCompliance?.trend || `${visitCompVal}% compliance`}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 11, color: TEXT_MUTED }}>No visits recorded</Text>
+                )}
               </View>
             </Pressable>
 
             {/* Card 2: Immunization Coverage */}
             <Pressable
               onPress={() => setShowIndicatorModal("immunization")}
-              style={({ pressed }) => [
-                styles.kpiCard,
-                styles.kpiCardHalf,
-                pressed && styles.cardPressed,
-              ]}
+              style={({ pressed }) => [styles.kpiCard, styles.kpiCardHalf, pressed && styles.cardPressed]}
             >
               <View style={styles.kpiHeaderRow}>
                 <Text style={styles.kpiLabel}>Immunization Coverage</Text>
               </View>
-              <Text style={styles.kpiTarget}>Target: 95%</Text>
+              <Text style={styles.kpiTarget}>Target: {immTarget}%</Text>
 
               {/* Horizontal Progress Bar & Right-Aligned Percentage */}
               <View style={styles.progressBarSection}>
@@ -420,83 +414,86 @@ export function MOHHome() {
                   <View
                     style={[
                       styles.progressBarFill,
-                      { width: "93%", backgroundColor: SUCCESS },
+                      {
+                        width: immVal !== null && immVal !== undefined ? `${Math.min(immVal, 100)}%` : "0%",
+                        backgroundColor: getComplianceColor(immVal, immTarget),
+                      },
                     ]}
                   />
                 </View>
-                <Text style={[styles.progressValueText, { color: SUCCESS }]}>93%</Text>
+                <Text style={[styles.progressValueText, { color: getComplianceColor(immVal, immTarget) }]}>
+                  {immVal !== null && immVal !== undefined ? `${immVal}%` : "No data yet"}
+                </Text>
               </View>
 
               <View style={styles.kpiSubBadgeRow}>
-                <View style={styles.pillAmberMini}>
-                  <Text style={styles.pillAmberMiniText}>Near target (95%)</Text>
-                </View>
+                {immVal !== null && immVal !== undefined ? (
+                  <View style={immVal >= immTarget ? styles.pillGreenMini : styles.pillAmberMini}>
+                    <Text style={immVal >= immTarget ? styles.pillGreenMiniText : styles.pillAmberMiniText}>
+                      {indicators?.immunizationCoverage?.trend || `Target: ${immTarget}%`}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 11, color: TEXT_MUTED }}>No children registered</Text>
+                )}
               </View>
             </Pressable>
 
             {/* Card 3: High-Risk Cases */}
             <Pressable
               onPress={() => navigate("moh-alerts")}
-              style={({ pressed }) => [
-                styles.kpiCard,
-                styles.kpiCardHalf,
-                pressed && styles.cardPressed,
-              ]}
+              style={({ pressed }) => [styles.kpiCard, styles.kpiCardHalf, pressed && styles.cardPressed]}
             >
-              {/* Top-right Trend Badge */}
               <View style={styles.kpiTopBadgeRow}>
-                <View style={styles.trendBadgeGreen}>
-                  <Ionicons name="arrow-down" size={11} color={SUCCESS_TEXT} />
-                  <Text style={styles.trendBadgeGreenText}>2</Text>
+                <View style={highRiskChange <= 0 ? styles.trendBadgeGreen : styles.pillAmberMini}>
+                  <Ionicons
+                    name={highRiskChange <= 0 ? "arrow-down" : "arrow-up"}
+                    size={11}
+                    color={highRiskChange <= 0 ? SUCCESS_TEXT : DANGER_TEXT}
+                  />
+                  <Text style={highRiskChange <= 0 ? styles.trendBadgeGreenText : { color: DANGER_TEXT, fontSize: 10, fontWeight: "700" }}>
+                    {highRiskChange >= 0 ? `+${highRiskChange}` : `${highRiskChange}`} vs last
+                  </Text>
                 </View>
               </View>
 
-              {/* Circular Ring Indicator showing 18 in center */}
               <View style={styles.ringCenterContainer}>
                 <RingDonut
-                  value={72}
-                  strokeColor={DANGER}
-                  trackColor={DANGER_BG}
+                  value={highRiskVal > 0 ? 100 : 0}
+                  strokeColor={highRiskVal > 0 ? DANGER : SUCCESS}
+                  trackColor={highRiskVal > 0 ? DANGER_BG : SUCCESS_BG}
                   size={58}
-                  displayValue="18"
+                  displayValue={highRiskVal}
                 />
               </View>
 
-              {/* Large Bold Number 18 below */}
-              <Text style={styles.largeBoldNumber}>18</Text>
+              <Text style={styles.largeBoldNumber}>{highRiskVal}</Text>
               <Text style={styles.kpiCardBottomLabel}>High-Risk Cases</Text>
             </Pressable>
 
-            {/* Card 4: PHM Zones */}
+            {/* Card 4: Active Clinic Areas (Replaces PHM Zones) */}
             <Pressable
-              onPress={() => setShowIndicatorModal("zones")}
-              style={({ pressed }) => [
-                styles.kpiCard,
-                styles.kpiCardHalf,
-                pressed && styles.cardPressed,
-              ]}
+              onPress={() => navigate("moh-missed")}
+              style={({ pressed }) => [styles.kpiCard, styles.kpiCardHalf, pressed && styles.cardPressed]}
             >
-              {/* Top-right Trend Badge: "active" */}
               <View style={styles.kpiTopBadgeRow}>
                 <View style={styles.trendBadgeGreen}>
                   <Text style={styles.trendBadgeGreenText}>active</Text>
                 </View>
               </View>
 
-              {/* Circular Ring Indicator showing 12 in center */}
               <View style={styles.ringCenterContainer}>
                 <RingDonut
-                  value={100}
-                  strokeColor={WARNING}
-                  trackColor={WARNING_BG}
+                  value={clinicAreasCount > 0 ? 100 : 0}
+                  strokeColor={PRIMARY}
+                  trackColor={PRIMARY_LIGHT}
                   size={58}
-                  displayValue="12"
+                  displayValue={clinicAreasCount}
                 />
               </View>
 
-              {/* Large Bold 12 below */}
-              <Text style={styles.largeBoldNumber}>12</Text>
-              <Text style={styles.kpiCardBottomLabel}>PHM Zones</Text>
+              <Text style={styles.largeBoldNumber}>{clinicAreasCount}</Text>
+              <Text style={styles.kpiCardBottomLabel}>Active Clinic Areas</Text>
             </Pressable>
           </View>
 
@@ -506,76 +503,70 @@ export function MOHHome() {
           <View style={styles.sectionContainer}>
             <View style={styles.singleCard}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>ZONE VISIT COMPLIANCE (%)</Text>
-                <Text style={styles.sectionHint}>Tap bar for details</Text>
+                <Text style={styles.sectionTitle}>CLINIC AREA VISIT COMPLIANCE (%)</Text>
+                <Text style={styles.sectionHint}>Tap bar to view alerts</Text>
               </View>
 
-              {/* Vertical Bar Chart with 5 Zones */}
-              <View style={styles.barChartContainer}>
-                {ZONES.map((zone) => {
-                  const maxBarHeight = 110;
-                  const barHeight = (zone.compliance / 100) * maxBarHeight;
-                  const isSelected = selectedZone?.id === zone.id;
+              {(!data?.zoneCompliance || data.zoneCompliance.length === 0) ? (
+                <EmptyState
+                  icon="business-outline"
+                  title="No clinic areas or visit data yet"
+                  description="Register clinic areas and field staff to begin tracking compliance."
+                  actionLabel="Add clinic area"
+                  onAction={() => navigate("moh-missed")}
+                />
+              ) : (
+                <>
+                  <View style={styles.barChartContainer}>
+                    {data.zoneCompliance.map((zone) => {
+                      const maxBarHeight = 110;
+                      const hasVal = zone.value !== null && zone.value !== undefined;
+                      const barHeight = hasVal ? Math.max(12, ((zone.value || 0) / 100) * maxBarHeight) : 8;
+                      const barColor = getComplianceColor(zone.value, 85);
 
-                  return (
-                    <Pressable
-                      key={zone.id}
-                      onPress={() => setSelectedZone(zone)}
-                      style={({ pressed }) => [
-                        styles.barColumn,
-                        pressed && { opacity: 0.75 },
-                      ]}
-                    >
-                      {/* Percentage Value above Bar */}
-                      <Text
-                        style={[
-                          styles.barValueText,
-                          isSelected && { color: zone.color, fontWeight: "900" },
-                        ]}
-                      >
-                        {zone.compliance}%
-                      </Text>
+                      return (
+                        <Pressable
+                          key={zone.clinicAreaId}
+                          onPress={() => handleZonePress(zone)}
+                          style={({ pressed }) => [styles.barColumn, pressed && { opacity: 0.75 }]}
+                        >
+                          <Text style={[styles.barValueText, { color: barColor, fontWeight: "800" }]}>
+                            {hasVal ? `${zone.value}%` : "—"}
+                          </Text>
 
-                      {/* Bar Track & Fill */}
-                      <View style={styles.barTrack}>
-                        <View
-                          style={[
-                            styles.barFill,
-                            {
-                              height: barHeight,
-                              backgroundColor: zone.color,
-                            },
-                            isSelected && styles.barFillSelected,
-                          ]}
-                        />
-                      </View>
+                          <View style={styles.barTrack}>
+                            <View
+                              style={[
+                                styles.barFill,
+                                {
+                                  height: barHeight,
+                                  backgroundColor: barColor,
+                                },
+                              ]}
+                            />
+                          </View>
 
-                      {/* Zone Name below Bar */}
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.barZoneName,
-                          isSelected && { color: TEXT_MAIN, fontWeight: "800" },
-                        ]}
-                      >
-                        {zone.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                          <Text numberOfLines={1} style={styles.barZoneName}>
+                            {zone.name}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
 
-              {/* Divider Line */}
-              <View style={styles.cardDivider} />
+                  <View style={styles.cardDivider} />
 
-              {/* District Average Row */}
-              <View style={styles.districtAverageRow}>
-                <View style={styles.districtAvgLabelCol}>
-                  <Text style={styles.districtAvgLabel}>District average</Text>
-                  <Text style={styles.districtAvgSub}>Weighted across 12 PHM divisions</Text>
-                </View>
-                <Text style={styles.districtAvgValue}>74%</Text>
-              </View>
+                  <View style={styles.districtAverageRow}>
+                    <View style={styles.districtAvgLabelCol}>
+                      <Text style={styles.districtAvgLabel}>District average</Text>
+                      <Text style={styles.districtAvgSub}>Weighted across all active MOH divisions</Text>
+                    </View>
+                    <Text style={styles.districtAvgValue}>
+                      {data?.districtAverage !== null && data?.districtAverage !== undefined ? `${data.districtAverage}%` : "No data"}
+                    </Text>
+                  </View>
+                </>
+              )}
             </View>
           </View>
 
@@ -586,69 +577,66 @@ export function MOHHome() {
             <Text style={styles.sectionTitleOutside}>RECENT ACTIVITY</Text>
 
             <View style={styles.singleCard}>
-              {ACTIVITIES.map((activity, index) => {
-                const isLast = index === ACTIVITIES.length - 1;
+              {(!data?.recentActivity || data.recentActivity.length === 0) ? (
+                <EmptyState
+                  icon="notifications-off-outline"
+                  title="No recent activity"
+                  description="High-risk flags, overdue checks, and staff record entries will appear here."
+                />
+              ) : (
+                data.recentActivity.map((activity, index) => {
+                  const isLast = index === (data.recentActivity.length - 1);
 
-                // Color-coded Circle Icon
-                let iconBg = PRIMARY_LIGHT;
-                let iconColor = PRIMARY;
-                let iconName: keyof typeof Ionicons.glyphMap = "information";
+                  let iconBg = PRIMARY_LIGHT;
+                  let iconColor = PRIMARY;
+                  let iconName: keyof typeof Ionicons.glyphMap = "information";
 
-                if (activity.type === "danger") {
-                  iconBg = DANGER_BG;
-                  iconColor = DANGER;
-                  iconName = "alert-circle";
-                } else if (activity.type === "warning") {
-                  iconBg = WARNING_BG;
-                  iconColor = WARNING;
-                  iconName = "warning";
-                } else if (activity.type === "success") {
-                  iconBg = SUCCESS_BG;
-                  iconColor = SUCCESS;
-                  iconName = "checkmark-circle";
-                } else {
-                  iconBg = PRIMARY_LIGHT;
-                  iconColor = PRIMARY;
-                  iconName = "medkit";
-                }
+                  if (activity.type === "high_risk") {
+                    iconBg = DANGER_BG;
+                    iconColor = DANGER;
+                    iconName = "alert-circle";
+                  } else if (activity.type === "overdue") {
+                    iconBg = WARNING_BG;
+                    iconColor = WARNING;
+                    iconName = "time-outline";
+                  } else if (activity.type === "sync") {
+                    iconBg = SUCCESS_BG;
+                    iconColor = SUCCESS;
+                    iconName = "checkmark-circle";
+                  } else {
+                    iconBg = PRIMARY_LIGHT;
+                    iconColor = PRIMARY;
+                    iconName = "medkit";
+                  }
 
-                return (
-                  <Pressable
-                    key={activity.id}
-                    onPress={() => setActiveActivity(activity)}
-                    style={({ pressed }) => [
-                      styles.activityRow,
-                      pressed && styles.activityRowPressed,
-                    ]}
-                  >
-                    {/* Color-Coded Circular Icon */}
-                    <View style={[styles.activityIconCircle, { backgroundColor: iconBg }]}>
-                      <Ionicons name={iconName} size={19} color={iconColor} />
-                    </View>
+                  return (
+                    <Pressable
+                      key={activity.refId || `act-${index}`}
+                      onPress={() => {
+                        if (activity.type === "high_risk" || activity.type === "overdue") {
+                          navigate("moh-alerts");
+                        }
+                      }}
+                      style={({ pressed }) => [styles.activityRow, pressed && styles.activityRowPressed]}
+                    >
+                      <View style={[styles.activityIconCircle, { backgroundColor: iconBg }]}>
+                        <Ionicons name={iconName} size={19} color={iconColor} />
+                      </View>
 
-                    {/* Middle: Description & Subtitle */}
-                    <View style={styles.activityTextCol}>
-                      <Text style={styles.activityTitle}>{activity.title}</Text>
-                      <Text style={styles.activityDetail} numberOfLines={1}>
-                        {activity.detail}
-                      </Text>
-                    </View>
+                      <View style={styles.activityTextCol}>
+                        <Text style={styles.activityTitle} numberOfLines={2}>{activity.message}</Text>
+                      </View>
 
-                    {/* Right: Timestamp */}
-                    <View style={styles.activityRightCol}>
-                      <Text style={styles.activityTime}>{activity.time}</Text>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={14}
-                        color={TEXT_LIGHT}
-                        style={{ marginTop: 2 }}
-                      />
-                    </View>
+                      <View style={styles.activityRightCol}>
+                        <Text style={styles.activityTime}>{formatActivityTime(activity.createdAt)}</Text>
+                        <Ionicons name="chevron-forward" size={14} color={TEXT_LIGHT} style={{ marginTop: 2 }} />
+                      </View>
 
-                    {!isLast && <View style={styles.rowSeparator} />}
-                  </Pressable>
-                );
-              })}
+                      {!isLast && <View style={styles.rowSeparator} />}
+                    </Pressable>
+                  );
+                })
+              )}
             </View>
           </View>
         </View>
@@ -659,7 +647,6 @@ export function MOHHome() {
       {/* ==================================================== */}
       <SafeAreaView edges={["bottom"]} style={styles.bottomNavSafeArea}>
         <View style={styles.bottomNavContainer}>
-          {/* Tab 1: Dashboard (Active, Purple Highlighted) */}
           <Pressable
             onPress={() => navigate("moh-home")}
             style={styles.navTab}
@@ -672,7 +659,6 @@ export function MOHHome() {
             <Text style={[styles.navLabel, styles.navLabelActive]}>Dashboard</Text>
           </Pressable>
 
-          {/* Tab 2: Alerts (Bell Icon with Badge) */}
           <Pressable
             onPress={() => navigate("moh-alerts")}
             style={styles.navTab}
@@ -680,15 +666,15 @@ export function MOHHome() {
           >
             <View style={styles.navIconBox}>
               <Ionicons name="notifications-outline" size={21} color={TEXT_MUTED} />
-              {/* Small Red Notification Badge */}
-              <View style={styles.navBadge}>
-                <Text style={styles.navBadgeText}>18</Text>
-              </View>
+              {highRiskVal > 0 && (
+                <View style={styles.navBadge}>
+                  <Text style={styles.navBadgeText}>{highRiskVal}</Text>
+                </View>
+              )}
             </View>
             <Text style={styles.navLabel}>Alerts</Text>
           </Pressable>
 
-          {/* Tab 3: Staff (People Icon) */}
           <Pressable
             onPress={() => navigate("moh-missed")}
             style={styles.navTab}
@@ -700,7 +686,6 @@ export function MOHHome() {
             <Text style={styles.navLabel}>Staff</Text>
           </Pressable>
 
-          {/* Tab 4: Reports (Document Icon) */}
           <Pressable
             onPress={() => navigate("moh-reports")}
             style={styles.navTab}
@@ -714,306 +699,56 @@ export function MOHHome() {
         </View>
       </SafeAreaView>
 
-      {/* ==================================================== */}
-      {/* INTERACTIVE MODAL 1: ZONE DETAIL VIEW                 */}
-      {/* ==================================================== */}
-      <Modal
-        visible={!!selectedZone}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setSelectedZone(null)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setSelectedZone(null)}
-        >
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalDragHandle} />
-
-            {selectedZone && (
-              <>
-                <View style={styles.modalHeaderRow}>
-                  <View>
-                    <View style={styles.modalTitleBadgeRow}>
-                      <Text style={styles.modalTitle}>{selectedZone.name} Zone</Text>
-                      <View
-                        style={[
-                          styles.zoneScorePill,
-                          { backgroundColor: `${selectedZone.color}20` },
-                        ]}
-                      >
-                        <Text style={[styles.zoneScorePillText, { color: selectedZone.color }]}>
-                          {selectedZone.compliance}% Compliance
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.modalSubTitle}>MOH Division: Monaragala</Text>
-                  </View>
-                  <Pressable
-                    onPress={() => setSelectedZone(null)}
-                    style={styles.modalCloseBtn}
-                  >
-                    <Ionicons name="close" size={20} color={TEXT_MUTED} />
-                  </Pressable>
-                </View>
-
-                {/* Zone Key Stats */}
-                <View style={styles.modalStatsRow}>
-                  <View style={styles.modalStatBox}>
-                    <Text style={styles.modalStatNumber}>{selectedZone.totalMothers}</Text>
-                    <Text style={styles.modalStatLabel}>Total Mothers</Text>
-                  </View>
-                  <View style={styles.modalStatBox}>
-                    <Text style={[styles.modalStatNumber, { color: DANGER }]}>
-                      {selectedZone.highRiskCount}
-                    </Text>
-                    <Text style={styles.modalStatLabel}>High-Risk</Text>
-                  </View>
-                  <View style={styles.modalStatBox}>
-                    <Text style={[styles.modalStatNumber, { color: WARNING }]}>
-                      {selectedZone.overdueCount}
-                    </Text>
-                    <Text style={styles.modalStatLabel}>Overdue</Text>
-                  </View>
-                </View>
-
-                {/* Assigned Midwife Info */}
-                <View style={styles.modalPhmCard}>
-                  <View style={styles.phmAvatarCircle}>
-                    <Ionicons name="person" size={20} color={PRIMARY} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.phmName}>{selectedZone.phmName}</Text>
-                    <Text style={styles.phmRole}>Public Health Midwife (PHM)</Text>
-                  </View>
-                  <Pressable
-                    onPress={() =>
-                      Alert.alert("Contact PHM", `Calling ${selectedZone.phmPhone}`)
-                    }
-                    style={styles.phmCallBtn}
-                  >
-                    <Ionicons name="call" size={16} color="#FFFFFF" />
-                    <Text style={styles.phmCallBtnText}>Call</Text>
-                  </Pressable>
-                </View>
-
-                {/* Quick Action Buttons */}
-                <View style={styles.modalActionsCol}>
-                  <Pressable
-                    onPress={() => {
-                      setSelectedZone(null);
-                      navigate("moh-alerts");
-                    }}
-                    style={[styles.modalPrimaryBtn, { backgroundColor: PRIMARY }]}
-                  >
-                    <Ionicons name="filter" size={17} color="#FFFFFF" />
-                    <Text style={styles.modalPrimaryBtnText}>
-                      Filter High-Risk Cases in {selectedZone.name}
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => setSelectedZone(null)}
-                    style={styles.modalSecondaryBtn}
-                  >
-                    <Text style={styles.modalSecondaryBtnText}>Close View</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* ==================================================== */}
-      {/* INTERACTIVE MODAL 2: CASE / ACTIVITY DETAIL VIEW     */}
-      {/* ==================================================== */}
-      <Modal
-        visible={!!activeActivity}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setActiveActivity(null)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setActiveActivity(null)}
-        >
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalDragHandle} />
-
-            {activeActivity && (
-              <>
-                <View style={styles.modalHeaderRow}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <View style={styles.modalTitleBadgeRow}>
-                      <Text style={styles.modalTitle}>{activeActivity.title}</Text>
-                    </View>
-                    <Text style={styles.modalSubTitle}>
-                      Timestamp: {activeActivity.time} · {activeActivity.zone}
-                    </Text>
-                  </View>
-                  <Pressable
-                    onPress={() => setActiveActivity(null)}
-                    style={styles.modalCloseBtn}
-                  >
-                    <Ionicons name="close" size={20} color={TEXT_MUTED} />
-                  </Pressable>
-                </View>
-
-                {/* Case Info Box */}
-                {activeActivity.caseData && (
-                  <View style={styles.clinicalCaseCard}>
-                    <View style={styles.clinicalCaseHeader}>
-                      <View>
-                        <Text style={styles.patientName}>
-                          {activeActivity.caseData.patientName}
-                        </Text>
-                        <Text style={styles.patientMeta}>
-                          {activeActivity.caseData.age} · {activeActivity.caseData.weeks} · Assigned PHM: {activeActivity.caseData.phm}
-                        </Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.priorityPill,
-                          activeActivity.caseData.priority === "Urgent"
-                            ? { backgroundColor: DANGER_BG }
-                            : activeActivity.caseData.priority === "Moderate"
-                            ? { backgroundColor: WARNING_BG }
-                            : { backgroundColor: SUCCESS_BG },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.priorityPillText,
-                            activeActivity.caseData.priority === "Urgent"
-                              ? { color: DANGER_TEXT }
-                              : activeActivity.caseData.priority === "Moderate"
-                              ? { color: WARNING_TEXT }
-                              : { color: SUCCESS_TEXT },
-                          ]}
-                        >
-                          {activeActivity.caseData.priority}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.clinicalNotesTitle}>Clinical Note / Summary:</Text>
-                    <Text style={styles.clinicalNotesBody}>
-                      {activeActivity.caseData.condition}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Doctor Triage Action Buttons */}
-                <View style={styles.modalActionsCol}>
-                  <Pressable
-                    onPress={() => {
-                      Alert.alert(
-                        "Clinical Action Dispatched",
-                        "Urgent referral directive transmitted to District Base Hospital & assigned PHM."
-                      );
-                      setActiveActivity(null);
-                    }}
-                    style={[styles.modalPrimaryBtn, { backgroundColor: PRIMARY }]}
-                  >
-                    <Ionicons name="paper-plane" size={17} color="#FFFFFF" />
-                    <Text style={styles.modalPrimaryBtnText}>Order Priority Referral</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => {
-                      Alert.alert(
-                        "Acknowledged",
-                        "Activity review logged by Dr. Pradeep Silva (MOH)."
-                      );
-                      setActiveActivity(null);
-                    }}
-                    style={styles.modalSecondaryBtn}
-                  >
-                    <Text style={styles.modalSecondaryBtnText}>Acknowledge & Archive</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* ==================================================== */}
-      {/* INTERACTIVE MODAL 3: LANGUAGE SWITCHER               */}
-      {/* ==================================================== */}
+      {/* Language Switcher Modal */}
       <Modal
         visible={showLangModal}
         animationType="fade"
         transparent={true}
         onRequestClose={() => setShowLangModal(false)}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setShowLangModal(false)}
-        >
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowLangModal(false)}>
           <Pressable style={styles.langModalBox} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.langModalTitle}>Select Language</Text>
             <Text style={styles.langModalSub}>භාෂාව තෝරන්න / மொழியைத் தேர்ந்தெடுக்கவும்</Text>
 
-            {(
-              [
-                { code: "en", label: "English", sub: "Default MOH language" },
-                { code: "si", label: "සිංහල", sub: "Sinhala" },
-                { code: "ta", label: "தமிழ்", sub: "Tamil" },
-              ] as const
-            ).map((item) => (
+            {[
+              { code: "en", label: "English", sub: "Default MOH language" },
+              { code: "si", label: "සිංහල", sub: "Sinhala" },
+              { code: "ta", label: "தமிழ்", sub: "Tamil" },
+            ].map((item) => (
               <Pressable
                 key={item.code}
                 onPress={() => {
                   setLanguage(item.code as Language);
                   setShowLangModal(false);
                 }}
-                style={[
-                  styles.langOptionRow,
-                  language === item.code && styles.langOptionRowActive,
-                ]}
+                style={[styles.langOptionRow, language === item.code && styles.langOptionRowActive]}
               >
                 <View>
-                  <Text
-                    style={[
-                      styles.langOptionText,
-                      language === item.code && { color: PRIMARY, fontWeight: "800" },
-                    ]}
-                  >
+                  <Text style={[styles.langOptionText, language === item.code && { color: PRIMARY, fontWeight: "800" }]}>
                     {item.label}
                   </Text>
                   <Text style={styles.langOptionSub}>{item.sub}</Text>
                 </View>
-                {language === item.code && (
-                  <Ionicons name="checkmark-circle" size={22} color={PRIMARY} />
-                )}
+                {language === item.code && <Ionicons name="checkmark-circle" size={22} color={PRIMARY} />}
               </Pressable>
             ))}
 
-            <Pressable
-              onPress={() => setShowLangModal(false)}
-              style={styles.langModalCancelBtn}
-            >
+            <Pressable onPress={() => setShowLangModal(false)} style={styles.langModalCancelBtn}>
               <Text style={styles.langModalCancelBtnText}>Done</Text>
             </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
 
-      {/* ==================================================== */}
-      {/* INTERACTIVE MODAL 4: INDICATOR BREAKDOWN             */}
-      {/* ==================================================== */}
+      {/* Indicator Breakdown Modal */}
       <Modal
         visible={!!showIndicatorModal}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowIndicatorModal(null)}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setShowIndicatorModal(null)}
-        >
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowIndicatorModal(null)}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalDragHandle} />
 
@@ -1022,18 +757,13 @@ export function MOHHome() {
                 <Text style={styles.modalTitle}>
                   {showIndicatorModal === "visit"
                     ? "Visit Compliance Breakdown"
-                    : showIndicatorModal === "immunization"
-                    ? "Immunization Coverage Breakdown"
-                    : "12 PHM Zones Overview"}
+                    : "Immunization Coverage Breakdown"}
                 </Text>
                 <Text style={styles.modalSubTitle}>
-                  Monaragala Health Office District Registry
+                  {data?.mohOffice?.name} MOH Registry
                 </Text>
               </View>
-              <Pressable
-                onPress={() => setShowIndicatorModal(null)}
-                style={styles.modalCloseBtn}
-              >
+              <Pressable onPress={() => setShowIndicatorModal(null)} style={styles.modalCloseBtn}>
                 <Ionicons name="close" size={20} color={TEXT_MUTED} />
               </Pressable>
             </View>
@@ -1041,22 +771,20 @@ export function MOHHome() {
             <View style={styles.indicatorDetailCard}>
               <Text style={styles.indicatorDetailIntro}>
                 {showIndicatorModal === "visit"
-                  ? "Overall maternal ante-natal and post-natal home visits stand at 87% compliance, beating the annual district target of 85%."
-                  : showIndicatorModal === "immunization"
-                  ? "Routine infant pentavalent and MMR immunization coverage is currently 93%, with catch-up rounds scheduled in Hella and Okkampitiya."
-                  : "All 12 field PHM divisions are fully reporting data with zero offline sync backlog."}
+                  ? `Maternal routine visits stand at ${visitCompVal !== null && visitCompVal !== undefined ? `${visitCompVal}%` : "no data"}, benchmark target is ${visitTarget}%.`
+                  : `Childhood immunization coverage is ${immVal !== null && immVal !== undefined ? `${immVal}%` : "no data"}, benchmark target is ${immTarget}%.`}
               </Text>
 
               <View style={styles.indicatorKpiSummaryRow}>
                 <View style={styles.summaryMiniBox}>
                   <Text style={styles.summaryMiniVal}>
-                    {showIndicatorModal === "visit" ? "87%" : showIndicatorModal === "immunization" ? "93%" : "12"}
+                    {showIndicatorModal === "visit" ? (visitCompVal !== null && visitCompVal !== undefined ? `${visitCompVal}%` : "No data") : (immVal !== null && immVal !== undefined ? `${immVal}%` : "No data")}
                   </Text>
                   <Text style={styles.summaryMiniLabel}>Current Value</Text>
                 </View>
                 <View style={styles.summaryMiniBox}>
                   <Text style={[styles.summaryMiniVal, { color: PRIMARY }]}>
-                    {showIndicatorModal === "visit" ? "85%" : showIndicatorModal === "immunization" ? "95%" : "12"}
+                    {showIndicatorModal === "visit" ? `${visitTarget}%` : `${immTarget}%`}
                   </Text>
                   <Text style={styles.summaryMiniLabel}>Benchmark Target</Text>
                 </View>
@@ -1081,33 +809,159 @@ export function MOHHome() {
 // ----------------------------------------------------
 export function MOHAlerts() {
   const { navigate } = useApp();
-  const [activeSegment, setActiveSegment] = useState<"alerts" | "missed">("alerts");
-  const [filter, setFilter] = useState<"all" | "urgent" | "watch">("all");
+  const [filterType, setFilterType] = useState<"all" | "high_risk" | "overdue" | "missed">("all");
+  const [selectedClinicAreaId, setSelectedClinicAreaId] = useState<string>("all");
+  const [clinicAreas, setClinicAreas] = useState<Array<{ _id: string; name: string }>>([]);
 
-  const missedData = [
-    { label: "ANC Visit", count: 12, max: 15, color: PRIMARY },
-    { label: "Postnatal", count: 7, max: 15, color: "#EC4899" },
-    { label: "Immunization", count: 9, max: 15, color: WARNING },
-    { label: "Growth Mon.", count: 5, max: 15, color: SUCCESS },
-  ];
-
-  const ALERTS_DATA = [
-    { id: "1", name: "Dilani Kumari", why: "BP 150/100 · 34 wks", area: "Okkampitiya", lvl: "danger", time: "2h ago" },
-    { id: "2", name: "Nirosha Madushani", why: "Reduced fetal movement", area: "Buttala", lvl: "danger", time: "3h ago" },
-    { id: "3", name: "Fathima Rizna", why: "Hb 8.9 g/dL · Severe anemia", area: "Wellawaya", lvl: "warn", time: "6h ago" },
-    { id: "4", name: "Baby of Kumudu", why: "Weight below −2SD (Growth faltering)", area: "Madulla", lvl: "warn", time: "Yesterday" },
-    { id: "5", name: "K. Sandya", why: "Gestational diabetes glucose spike", area: "Gonagala", lvl: "danger", time: "Yesterday" },
-    { id: "6", name: "Malani Jayawardena", why: "Overdue post-term check (40w 3d)", area: "Baevi", lvl: "warn", time: "2 days ago" },
-  ];
-
-  const filtered = ALERTS_DATA.filter((a) => {
-    if (filter === "urgent") return a.lvl === "danger";
-    if (filter === "watch") return a.lvl === "warn";
-    return true;
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [counts, setCounts] = useState<{ highRisk: number; overdue: number; missed: number }>({
+    highRisk: 0,
+    overdue: 0,
+    missed: 0,
   });
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Detail Modal State
+  const [selectedAlert, setSelectedAlert] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+
+  // Check pending clinic area filter on mount (e.g. from Dashboard bar tap)
+  useEffect(() => {
+    const pendingArea = getAlertClinicAreaFilter();
+    if (pendingArea) {
+      setSelectedClinicAreaId(pendingArea);
+    }
+  }, []);
+
+  // Fetch clinic areas for filter bar
+  useEffect(() => {
+    let mounted = true;
+    getMohClinicAreas()
+      .then((areas) => {
+        if (mounted && Array.isArray(areas)) {
+          setClinicAreas(areas);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const fetchAlerts = useCallback(
+    async (pageNum = 1, isPullRefresh = false) => {
+      try {
+        if (isPullRefresh) {
+          setRefreshing(true);
+        } else if (pageNum === 1) {
+          setLoading(true);
+        }
+        setError(null);
+
+        const params: any = {
+          page: pageNum,
+          limit: 25,
+          status: "open",
+        };
+        if (filterType !== "all") {
+          params.type = filterType;
+        }
+        if (selectedClinicAreaId && selectedClinicAreaId !== "all") {
+          params.clinicAreaId = selectedClinicAreaId;
+        }
+
+        const res = await getMohAlerts(params);
+        const items = res.items || [];
+        setCounts(res.counts || { highRisk: 0, overdue: 0, missed: 0 });
+        setTotal(res.total || 0);
+
+        if (pageNum === 1) {
+          setAlerts(items);
+        } else {
+          setAlerts((prev) => [...prev, ...items]);
+        }
+        setHasMore(items.length >= 25);
+        setPage(pageNum);
+      } catch (err: any) {
+        setError(err?.message || "Failed to load alerts from server");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [filterType, selectedClinicAreaId]
+  );
+
+  useEffect(() => {
+    fetchAlerts(1);
+  }, [fetchAlerts]);
+
+  const handleOpenDetail = async (item: any) => {
+    setSelectedAlert(item);
+    setDetailModalVisible(true);
+    setDetailLoading(true);
+    try {
+      const fullRes = await getMohAlertDetail(item.id);
+      setSelectedAlert(fullRes.alert || fullRes);
+    } catch {
+      // Keep basic item info
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const formatRelativeTime = (dateStr?: string) => {
+    if (!dateStr) return "";
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours < 1) return "Just now";
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return new Date(dateStr).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  };
+
+  const getSeverityStyle = (severity?: string, type?: string) => {
+    if (severity === "danger" || type === "high_risk") {
+      return {
+        bg: DANGER_BG,
+        iconColor: DANGER,
+        text: DANGER_TEXT,
+        icon: "alert-circle" as const,
+        label: "High-Risk",
+      };
+    }
+    if (severity === "warn" || type === "overdue") {
+      return {
+        bg: WARNING_BG,
+        iconColor: WARNING,
+        text: WARNING_TEXT,
+        icon: "time" as const,
+        label: "Overdue",
+      };
+    }
+    return {
+      bg: "#EFF6FF",
+      iconColor: "#3B82F6",
+      text: "#1D4ED8",
+      icon: "information-circle" as const,
+      label: "Missed",
+    };
+  };
+
+  const activeAlertsCount = (counts.highRisk || 0) + (counts.overdue || 0) + (counts.missed || 0);
 
   return (
     <View style={styles.screenContainer}>
+      {/* Header */}
       <LinearGradient colors={["#7B4FE0", "#6B3FD4"]} style={styles.subHeaderGradient}>
         <SafeAreaView edges={["top"]}>
           <View style={styles.subHeaderRow}>
@@ -1115,196 +969,365 @@ export function MOHAlerts() {
               <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
             </Pressable>
             <View style={{ flex: 1 }}>
-              <Text style={styles.subHeaderTitle}>
-                {activeSegment === "alerts" ? "High-Risk Cases (18)" : "Missed Visits Analysis"}
-              </Text>
+              <Text style={styles.subHeaderTitle}>Alerts & Case Triage</Text>
               <Text style={styles.subHeaderSubtitle}>
-                {activeSegment === "alerts"
-                  ? "Prioritized maternal triage queue"
-                  : "Overdue follow-up checks this month"}
+                {activeAlertsCount > 0
+                  ? `${activeAlertsCount} active cases requiring clinical attention`
+                  : "Live maternal & child health surveillance"}
               </Text>
             </View>
-          </View>
-
-          {/* Segmented Control: Alerts | Missed Visits */}
-          <View style={styles.segmentedControlRow}>
-            <Pressable
-              onPress={() => setActiveSegment("alerts")}
-              style={[
-                styles.segmentItem,
-                activeSegment === "alerts" && styles.segmentItemActive,
-              ]}
-            >
-              <Ionicons
-                name="notifications-outline"
-                size={16}
-                color={activeSegment === "alerts" ? PRIMARY : "rgba(255, 255, 255, 0.85)"}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  styles.segmentItemText,
-                  activeSegment === "alerts" && styles.segmentItemTextActive,
-                ]}
-              >
-                Alerts
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setActiveSegment("missed")}
-              style={[
-                styles.segmentItem,
-                activeSegment === "missed" && styles.segmentItemActive,
-              ]}
-            >
-              <Ionicons
-                name="bar-chart-outline"
-                size={16}
-                color={activeSegment === "missed" ? PRIMARY : "rgba(255, 255, 255, 0.85)"}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  styles.segmentItemText,
-                  activeSegment === "missed" && styles.segmentItemTextActive,
-                ]}
-              >
-                Missed Visits
-              </Text>
-            </Pressable>
           </View>
         </SafeAreaView>
       </LinearGradient>
 
-      {activeSegment === "alerts" ? (
-        <>
-          <View style={styles.filterPillsRow}>
-            {(["all", "urgent", "watch"] as const).map((f) => (
+      {/* Type Filter Chips Row */}
+      <View style={{ backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderColor: "#EEF2F6" }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterPillsRow}
+        >
+          {[
+            { key: "all", label: `All (${total})` },
+            { key: "high_risk", label: `High-Risk (${counts.highRisk})` },
+            { key: "overdue", label: `Overdue (${counts.overdue})` },
+            { key: "missed", label: `Missed (${counts.missed})` },
+          ].map((chip) => {
+            const isSelected = filterType === chip.key;
+            return (
               <Pressable
-                key={f}
-                onPress={() => setFilter(f)}
+                key={chip.key}
+                onPress={() => setFilterType(chip.key as any)}
                 style={[
                   styles.filterPill,
-                  filter === f && { backgroundColor: PRIMARY },
+                  isSelected && { backgroundColor: PRIMARY },
                 ]}
               >
                 <Text
                   style={[
                     styles.filterPillText,
-                    filter === f && { color: "#FFFFFF", fontWeight: "800" },
+                    isSelected && { color: "#FFFFFF", fontWeight: "800" },
                   ]}
                 >
-                  {f === "all" ? "All Cases (18)" : f === "urgent" ? "Urgent (8)" : "Watch List (10)"}
+                  {chip.label}
                 </Text>
               </Pressable>
-            ))}
-          </View>
+            );
+          })}
+        </ScrollView>
 
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
-            {filtered.map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() =>
-                  Alert.alert(
-                    item.name,
-                    `${item.why}\nArea: ${item.area}\nFlagged: ${item.time}`,
-                    [
-                      { text: "Call PHM", onPress: () => {} },
-                      { text: "Refer Hospital", onPress: () => {} },
-                      { text: "Close", style: "cancel" },
-                    ]
-                  )
-                }
-                style={styles.alertCardItem}
+        {/* Clinic Area Horizontal Filter */}
+        {clinicAreas.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 10, gap: 8 }}
+          >
+            <Pressable
+              onPress={() => setSelectedClinicAreaId("all")}
+              style={[
+                styles.areaFilterChip,
+                selectedClinicAreaId === "all" && styles.areaFilterChipActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.areaFilterChipText,
+                  selectedClinicAreaId === "all" && styles.areaFilterChipTextActive,
+                ]}
               >
-                <View
+                All Areas
+              </Text>
+            </Pressable>
+            {clinicAreas.map((ca) => {
+              const isSelected = selectedClinicAreaId === ca._id;
+              return (
+                <Pressable
+                  key={ca._id}
+                  onPress={() => setSelectedClinicAreaId(ca._id)}
                   style={[
-                    styles.alertIconCircle,
-                    { backgroundColor: item.lvl === "danger" ? DANGER_BG : WARNING_BG },
+                    styles.areaFilterChip,
+                    isSelected && styles.areaFilterChipActive,
                   ]}
                 >
-                  <Ionicons
-                    name={item.lvl === "danger" ? "alert-circle" : "warning"}
-                    size={20}
-                    color={item.lvl === "danger" ? DANGER : WARNING}
-                  />
+                  <Text
+                    style={[
+                      styles.areaFilterChipText,
+                      isSelected && styles.areaFilterChipTextActive,
+                    ]}
+                  >
+                    {ca.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
+
+      {/* Main Content Area */}
+      {loading && !refreshing ? (
+        <View style={{ padding: 16 }}>
+          <DashboardSkeleton />
+        </View>
+      ) : error && alerts.length === 0 ? (
+        <View style={{ padding: 16, paddingTop: 30 }}>
+          <ErrorState message={error} onRetry={() => fetchAlerts(1)} />
+        </View>
+      ) : alerts.length === 0 ? (
+        <View style={{ padding: 16, paddingTop: 40 }}>
+          <EmptyState
+            icon="checkmark-circle-outline"
+            title="No alerts. Everything is on track."
+            description="There are currently no high-risk cases, overdue visits, or missed milestones matching your filters."
+          />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => fetchAlerts(1, true)}
+              colors={[PRIMARY]}
+              tintColor={PRIMARY}
+            />
+          }
+        >
+          {alerts.map((item) => {
+            const sev = getSeverityStyle(item.severity, item.type);
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => handleOpenDetail(item)}
+                style={({ pressed }) => [
+                  styles.alertCardItem,
+                  pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+                ]}
+              >
+                <View style={[styles.alertIconCircle, { backgroundColor: sev.bg }]}>
+                  <Ionicons name={sev.icon} size={20} color={sev.iconColor} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={styles.alertPatientName}>{item.name}</Text>
-                    <Text style={styles.alertTimeText}>{item.time}</Text>
-                  </View>
-                  <Text style={styles.alertReasonText}>{item.why}</Text>
-                  <View style={styles.alertMetaRow}>
-                    <Ionicons name="location-outline" size={12} color={TEXT_MUTED} />
-                    <Text style={styles.alertAreaText}>{item.area} Zone</Text>
-                    <View
-                      style={[
-                        styles.tagBadgeMini,
-                        { backgroundColor: item.lvl === "danger" ? DANGER_BG : WARNING_BG },
-                      ]}
-                    >
-                      <Text
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 8 }}>
+                      <Text style={styles.alertPatientName} numberOfLines={1}>{item.patientName}</Text>
+                      <View
                         style={[
-                          styles.tagBadgeMiniText,
-                          { color: item.lvl === "danger" ? DANGER_TEXT : WARNING_TEXT },
+                          styles.tagBadgeMini,
+                          { backgroundColor: item.patientType === "child" ? "#E0E7FF" : PRIMARY_LIGHT },
                         ]}
                       >
-                        {item.lvl === "danger" ? "Urgent" : "Watch"}
+                        <Text
+                          style={[
+                            styles.tagBadgeMiniText,
+                            { color: item.patientType === "child" ? "#4338CA" : PRIMARY_DARK },
+                          ]}
+                        >
+                          {item.patientType === "child" ? "Child" : "Mother"}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.alertTimeText}>{formatRelativeTime(item.flaggedAt)}</Text>
+                  </View>
+
+                  <Text style={styles.alertReasonText}>{item.reason}</Text>
+
+                  <View style={styles.alertMetaRow}>
+                    <Ionicons name="location-outline" size={12} color={TEXT_MUTED} />
+                    <Text style={styles.alertAreaText}>{item.clinicAreaName || "Clinic Area"}</Text>
+                    {item.dueDate ? (
+                      <>
+                        <Text style={[styles.alertAreaText, { marginHorizontal: 3 }]}>•</Text>
+                        <Text style={[styles.alertAreaText, { color: DANGER_TEXT, fontWeight: "600" }]}>
+                          Due: {new Date(item.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                        </Text>
+                      </>
+                    ) : null}
+                    {item.flaggedBy?.name ? (
+                      <>
+                        <Text style={[styles.alertAreaText, { marginHorizontal: 3 }]}>•</Text>
+                        <Text style={styles.alertAreaText}>{item.flaggedBy.name}</Text>
+                      </>
+                    ) : null}
+                    <View style={[styles.tagBadgeMini, { backgroundColor: sev.bg, marginLeft: "auto" }]}>
+                      <Text style={[styles.tagBadgeMiniText, { color: sev.text }]}>
+                        {sev.label}
                       </Text>
                     </View>
                   </View>
                 </View>
               </Pressable>
-            ))}
-          </ScrollView>
-        </>
-      ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
-          {/* Column Bar Overview */}
-          <View style={styles.singleCard}>
-            <Text style={styles.sectionTitle}>MISSED VISITS BY CATEGORY</Text>
-            <View style={styles.missedChartRow}>
-              {missedData.map((d) => (
-                <View key={d.label} style={styles.missedBarCol}>
-                  <Text style={styles.missedBarCount}>{d.count}</Text>
-                  <View style={styles.missedBarTrack}>
-                    <View
-                      style={[
-                        styles.missedBarFill,
-                        { height: (d.count / d.max) * 110, backgroundColor: d.color },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.missedBarLabel} numberOfLines={1}>
-                    {d.label}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
+            );
+          })}
 
-          {/* Breakdown by PHM Zone */}
-          <View style={[styles.singleCard, { marginTop: 16 }]}>
-            <Text style={styles.sectionTitle}>MISSED VISITS BY PHM ZONE</Text>
-            {ZONES.map((zone) => (
-              <View key={zone.id} style={styles.missedZoneRow}>
-                <View style={styles.missedZoneInfo}>
-                  <Text style={styles.missedZoneName}>{zone.name} Zone</Text>
-                  <Text style={styles.missedZoneSub}>Assigned PHM: {zone.phmName}</Text>
-                </View>
-                <View style={styles.missedCountPill}>
-                  <Text style={styles.missedCountPillText}>{zone.overdueCount} missed</Text>
-                </View>
-              </View>
-            ))}
-          </View>
+          {hasMore && (
+            <Pressable
+              onPress={() => fetchAlerts(page + 1)}
+              style={{ padding: 14, alignItems: "center" }}
+            >
+              <Text style={{ color: PRIMARY, fontWeight: "700", fontSize: 13 }}>
+                Load more alerts...
+              </Text>
+            </Pressable>
+          )}
         </ScrollView>
       )}
 
-      {/* Shared Bottom Nav */}
-      <MOHSharedBottomNav activeTab="Alerts" />
+      {/* Alert Detail Modal */}
+      <Modal
+        visible={detailModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailModalVisible(false)}
+      >
+        <View style={styles.alertModalOverlay}>
+          <View style={styles.alertModalCard}>
+            <View style={styles.alertModalHeader}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={styles.alertModalTitle}>
+                  {selectedAlert?.patientName || "Case Details"}
+                </Text>
+                <Text style={styles.alertModalSubtitle}>
+                  {selectedAlert?.patientType === "child" ? "Infant / Child Case" : "Maternal Case"} • {selectedAlert?.clinicAreaName || "Clinic Area"}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setDetailModalVisible(false)}
+                style={styles.alertModalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color={TEXT_MAIN} />
+              </Pressable>
+            </View>
+
+            {detailLoading ? (
+              <View style={{ padding: 30, alignItems: "center" }}>
+                <ActivityIndicator size="large" color={PRIMARY} />
+                <Text style={{ marginTop: 10, color: TEXT_MUTED, fontSize: 13 }}>
+                  Loading clinical details...
+                </Text>
+              </View>
+            ) : selectedAlert ? (
+              <ScrollView style={styles.alertModalBody} showsVerticalScrollIndicator={false}>
+                {/* Clinical Concern Banner */}
+                <View style={styles.detailSectionCard}>
+                  <Text style={styles.detailSectionLabel}>PRIMARY CLINICAL CONCERN</Text>
+                  <Text style={styles.detailReasonBig}>{selectedAlert.reason}</Text>
+                </View>
+
+                {/* Vitals & Metrics Breakdown */}
+                {selectedAlert.vitals && (
+                  <View style={styles.detailSectionCard}>
+                    <Text style={styles.detailSectionLabel}>REPORTED CLINICAL VITALS</Text>
+                    {selectedAlert.vitals.bloodPressure ? (
+                      <View style={styles.detailGridRow}>
+                        <Text style={styles.detailGridLabel}>Blood Pressure</Text>
+                        <Text style={[styles.detailGridValue, { color: DANGER_TEXT }]}>
+                          {selectedAlert.vitals.bloodPressure}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {selectedAlert.vitals.weight ? (
+                      <View style={styles.detailGridRow}>
+                        <Text style={styles.detailGridLabel}>Weight</Text>
+                        <Text style={styles.detailGridValue}>{selectedAlert.vitals.weight} kg</Text>
+                      </View>
+                    ) : null}
+                    {selectedAlert.vitals.gestationalWeeks ? (
+                      <View style={styles.detailGridRow}>
+                        <Text style={styles.detailGridLabel}>Gestational Age</Text>
+                        <Text style={styles.detailGridValue}>{selectedAlert.vitals.gestationalWeeks} weeks</Text>
+                      </View>
+                    ) : null}
+                    {selectedAlert.vitals.hemoglobin ? (
+                      <View style={styles.detailGridRow}>
+                        <Text style={styles.detailGridLabel}>Hemoglobin (Hb)</Text>
+                        <Text style={styles.detailGridValue}>{selectedAlert.vitals.hemoglobin} g/dL</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Details Breakdown */}
+                <View style={styles.detailSectionCard}>
+                  <Text style={styles.detailSectionLabel}>CASE METADATA</Text>
+                  <View style={styles.detailGridRow}>
+                    <Text style={styles.detailGridLabel}>Status</Text>
+                    <Text style={[styles.detailGridValue, { textTransform: "capitalize", color: SUCCESS_TEXT }]}>
+                      {selectedAlert.status || "Open"}
+                    </Text>
+                  </View>
+                  <View style={styles.detailGridRow}>
+                    <Text style={styles.detailGridLabel}>Clinic Area</Text>
+                    <Text style={styles.detailGridValue}>{selectedAlert.clinicAreaName || "N/A"}</Text>
+                  </View>
+                  {selectedAlert.dueDate ? (
+                    <View style={styles.detailGridRow}>
+                      <Text style={styles.detailGridLabel}>Due / Scheduled Date</Text>
+                      <Text style={[styles.detailGridValue, { color: DANGER_TEXT }]}>
+                        {new Date(selectedAlert.dueDate).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {selectedAlert.flaggedBy ? (
+                    <View style={styles.detailGridRow}>
+                      <Text style={styles.detailGridLabel}>Flagged By</Text>
+                      <Text style={styles.detailGridValue}>
+                        {selectedAlert.flaggedBy.name} ({selectedAlert.flaggedBy.role})
+                      </Text>
+                    </View>
+                  ) : null}
+                  {selectedAlert.flaggedAt ? (
+                    <View style={styles.detailGridRow}>
+                      <Text style={styles.detailGridLabel}>Recorded At</Text>
+                      <Text style={styles.detailGridValue}>
+                        {new Date(selectedAlert.flaggedAt).toLocaleString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.alertModalActionsRow}>
+                  <Pressable
+                    onPress={() => {
+                      if (selectedAlert.contactPhone) {
+                        Linking.openURL(`tel:${selectedAlert.contactPhone}`).catch(() => {
+                          Alert.alert("Call PHM", `Assigned phone: ${selectedAlert.contactPhone}`);
+                        });
+                      } else {
+                        Alert.alert("Contact Staff", "Notification request sent to assigned PHM / Clinic staff.");
+                      }
+                    }}
+                    style={styles.modalBtnPrimary}
+                  >
+                    <Ionicons name="call" size={16} color="#FFFFFF" />
+                    <Text style={styles.modalBtnPrimaryText}>Call Staff</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setDetailModalVisible(false)}
+                    style={styles.modalBtnSecondary}
+                  >
+                    <Text style={styles.modalBtnSecondaryText}>Close</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Shared Bottom Nav with Real Alerts Count */}
+      <MOHSharedBottomNav activeTab="Alerts" alertsCount={activeAlertsCount} />
     </View>
   );
 }
@@ -1338,7 +1361,13 @@ export function MOHReports() {
 // ----------------------------------------------------
 // SHARED BOTTOM NAV FOR SUB-SCREENS
 // ----------------------------------------------------
-function MOHSharedBottomNav({ activeTab }: { activeTab: "Dashboard" | "Alerts" | "Staff" | "Missed" | "Reports" }) {
+function MOHSharedBottomNav({
+  activeTab,
+  alertsCount,
+}: {
+  activeTab: "Dashboard" | "Alerts" | "Staff" | "Missed" | "Reports";
+  alertsCount?: number;
+}) {
   const { navigate } = useApp();
 
   return (
@@ -1385,9 +1414,11 @@ function MOHSharedBottomNav({ activeTab }: { activeTab: "Dashboard" | "Alerts" |
               size={21}
               color={activeTab === "Alerts" ? PRIMARY : TEXT_MUTED}
             />
-            <View style={styles.navBadge}>
-              <Text style={styles.navBadgeText}>18</Text>
-            </View>
+            {alertsCount != null && alertsCount > 0 && (
+              <View style={styles.navBadge}>
+                <Text style={styles.navBadgeText}>{alertsCount > 99 ? "99+" : alertsCount}</Text>
+              </View>
+            )}
           </View>
           <Text
             style={[
@@ -2515,5 +2546,145 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: TEXT_MUTED,
     marginTop: 2,
+  },
+
+  // Alert Screen Filters & Details Modal
+  areaFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  areaFilterChipActive: {
+    backgroundColor: PRIMARY_LIGHT,
+    borderColor: PRIMARY,
+  },
+  areaFilterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: TEXT_MUTED,
+  },
+  areaFilterChipTextActive: {
+    color: PRIMARY_DARK,
+    fontWeight: "800",
+  },
+  alertModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "flex-end",
+  },
+  alertModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "85%",
+    paddingBottom: 24,
+  },
+  alertModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  alertModalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: TEXT_MAIN,
+  },
+  alertModalSubtitle: {
+    fontSize: 12.5,
+    color: TEXT_MUTED,
+    marginTop: 2,
+  },
+  alertModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  alertModalBody: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  detailSectionCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#EEF2F6",
+  },
+  detailSectionLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: TEXT_MUTED,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  detailReasonBig: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: DANGER_TEXT,
+    lineHeight: 21,
+  },
+  detailGridRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EEF2F6",
+  },
+  detailGridLabel: {
+    fontSize: 12.5,
+    color: TEXT_MUTED,
+    fontWeight: "500",
+  },
+  detailGridValue: {
+    fontSize: 12.5,
+    color: TEXT_MAIN,
+    fontWeight: "700",
+  },
+  alertModalActionsRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  modalBtnSecondary: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalBtnSecondaryText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: TEXT_MAIN,
+  },
+  modalBtnPrimary: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalBtnPrimaryText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 });

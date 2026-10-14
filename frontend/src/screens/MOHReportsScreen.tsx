@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -12,7 +12,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { api } from "../api/client";
+import {
+  getMohReportData,
+  downloadMohReport,
+  getMohReportHistory,
+  getMohClinicAreas,
+} from "../api/mohApi";
 
 // ─────────────────────────────────────────────────────────────
 // DESIGN TOKENS (Matching MOH Dashboard Design System)
@@ -55,114 +60,99 @@ export interface PastReport {
   format: DownloadFormat;
   date: string;
   size: string;
-  compliance: number;
-  immunization: number;
-  highRisk: number;
-  missed: number;
+  compliance?: number | null;
+  immunization?: number | null;
+  highRisk?: number | null;
+  missed?: number | null;
   zone?: string;
+  parameters?: any;
 }
 
-export const ZONES = [
-  { id: "all", name: "All Zones", compliance: 78, highRisk: 18, missed: 33 },
-  { id: "buttala", name: "Buttala", compliance: 81, highRisk: 4, missed: 5 },
-  { id: "hella", name: "Hella", compliance: 68, highRisk: 6, missed: 12 },
-  { id: "gonagala", name: "Gonagala", compliance: 77, highRisk: 3, missed: 7 },
-  { id: "baevi", name: "Baevi", compliance: 85, highRisk: 2, missed: 4 },
-  { id: "medawe", name: "Medawe", compliance: 79, highRisk: 3, missed: 5 },
-];
+export interface WeekOption {
+  label: string;
+  from: string;
+  to: string;
+}
 
-const INITIAL_HISTORY: PastReport[] = [
-  {
-    id: "rep-1",
-    name: "September 2026 MCH Return",
-    period: "September 2026",
-    type: "Monthly",
-    format: "pdf",
-    date: "Oct 01, 2026",
-    size: "1.4 MB",
-    compliance: 79,
-    immunization: 93,
-    highRisk: 16,
-    missed: 29,
-  },
-  {
-    id: "rep-2",
-    name: "Hella Division Health Audit",
-    period: "Q3 2026",
-    type: "Area-wise",
-    format: "excel",
-    date: "Sep 28, 2026",
-    size: "820 KB",
-    compliance: 68,
-    immunization: 88,
-    highRisk: 6,
-    missed: 12,
-    zone: "Hella",
-  },
-  {
-    id: "rep-3",
-    name: "Week 39 Maternal Surveillance",
-    period: "Sep 22 – Sep 28, 2026",
-    type: "Weekly",
-    format: "pdf",
-    date: "Sep 29, 2026",
-    size: "1.1 MB",
-    compliance: 82,
-    immunization: 95,
-    highRisk: 4,
-    missed: 6,
-  },
-  {
-    id: "rep-4",
-    name: "Buttala Division Compliance Snapshot",
-    period: "August 2026",
-    type: "Area-wise",
-    format: "png",
-    date: "Sep 15, 2026",
-    size: "640 KB",
-    compliance: 81,
-    immunization: 92,
-    highRisk: 4,
-    missed: 5,
-    zone: "Buttala",
-  },
-  {
-    id: "rep-5",
-    name: "August 2026 Monthly Summary",
-    period: "August 2026",
-    type: "Monthly",
-    format: "excel",
-    date: "Sep 02, 2026",
-    size: "950 KB",
-    compliance: 76,
-    immunization: 91,
-    highRisk: 19,
-    missed: 35,
-  },
-];
+export interface MonthOption {
+  label: string;
+  month: string;
+}
 
-const AVAILABLE_WEEKS = [
-  "Oct 6 – Oct 12, 2026",
-  "Sep 29 – Oct 5, 2026",
-  "Sep 22 – Sep 28, 2026",
-  "Sep 15 – Sep 21, 2026",
-  "Sep 8 – Sep 14, 2026",
-];
+// Generate dynamic weeks (Monday to Sunday) and months in Asia/Colombo time
+const AVAILABLE_WEEKS: WeekOption[] = (() => {
+  const weeks: WeekOption[] = [];
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMonday);
 
-const AVAILABLE_MONTHS = [
-  "October 2026",
-  "September 2026",
-  "August 2026",
-  "July 2026",
-  "June 2026",
-];
+  for (let i = 0; i < 6; i++) {
+    const start = new Date(monday);
+    start.setDate(start.getDate() - i * 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+
+    const from = start.toISOString().slice(0, 10);
+    const to = end.toISOString().slice(0, 10);
+    const label = `${start.toLocaleDateString("en-GB", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-GB", { month: "short", day: "numeric", year: "numeric" })}`;
+    weeks.push({ label, from, to });
+  }
+  return weeks;
+})();
+
+const AVAILABLE_MONTHS: MonthOption[] = (() => {
+  const months: MonthOption[] = [];
+  const now = new Date();
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    months.push({ label, month });
+  }
+  return months;
+})();
 
 const REPORT_CONTENT_OPTIONS = [
-  { id: "compliance", label: "Visit Compliance" },
+  { id: "visitCompliance", label: "Visit Compliance" },
   { id: "immunization", label: "Immunization Coverage" },
   { id: "highRisk", label: "High-Risk Cases" },
-  { id: "missed", label: "Missed Visits" },
+  { id: "missedVisits", label: "Missed Visits" },
 ];
+
+export interface ActiveReportModel {
+  title: string;
+  periodOrZone: string;
+  timestamp: string;
+  type: ReportType;
+  compliance: number | null;
+  immunization: number | null;
+  highRisk: number | null;
+  missed: number | null;
+  zoneName: string;
+  zoneBreakdown: Array<{
+    clinicAreaId: string;
+    name: string;
+    compliance: number | null;
+    highRisk: number;
+    missed: number;
+    visits?: { done: number; scheduled: number };
+  }>;
+  districtAverage: number | null;
+  chartSeries: Array<{
+    label: string;
+    value: number | null;
+    color: string;
+  }>;
+  params: {
+    type: string;
+    from?: string;
+    to?: string;
+    month?: string;
+    clinicAreaId?: string;
+    include?: string;
+  };
+}
 
 interface MOHReportsScreenProps {
   onBackToHome: () => void;
@@ -178,32 +168,27 @@ export function MOHReportsScreen({
 
   // Screen 1 form state
   const [reportType, setReportType] = useState<ReportType>("Monthly");
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState(1); // "Sep 29 – Oct 5, 2026"
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0); // "October 2026"
-  const [selectedZone, setSelectedZone] = useState("All Zones");
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
+
+  // Clinic areas loaded from real backend
+  const [clinicAreas, setClinicAreas] = useState<Array<{ _id: string; name: string }>>([]);
+  const [selectedZoneId, setSelectedZoneId] = useState("all");
+  const [selectedZoneName, setSelectedZoneName] = useState("All Zones");
   const [zonePickerVisible, setZonePickerVisible] = useState(false);
+
   const [selectedContents, setSelectedContents] = useState<string[]>([
-    "compliance",
+    "visitCompliance",
     "immunization",
     "highRisk",
-    "missed",
+    "missedVisits",
   ]);
 
   // Loading skeleton state for Screen 2
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   // Screen 2 active report model
-  const [activeReportData, setActiveReportData] = useState<{
-    title: string;
-    periodOrZone: string;
-    timestamp: string;
-    type: ReportType;
-    compliance: number;
-    immunization: number;
-    highRisk: number;
-    missed: number;
-    zoneName: string;
-  } | null>(null);
+  const [activeReportData, setActiveReportData] = useState<ActiveReportModel | null>(null);
 
   // Screen 3 Download Modal state
   const [downloadModalVisible, setDownloadModalVisible] = useState(false);
@@ -211,7 +196,7 @@ export function MOHReportsScreen({
   const [downloadSuccessFormat, setDownloadSuccessFormat] = useState<DownloadFormat | null>(null);
 
   // Screen 4 History state
-  const [historyReports, setHistoryReports] = useState<PastReport[]>(INITIAL_HISTORY);
+  const [historyReports, setHistoryReports] = useState<PastReport[]>([]);
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [historyFilter, setHistoryFilter] = useState<string>("All");
 
@@ -219,8 +204,60 @@ export function MOHReportsScreen({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3200);
   };
+
+  // Load clinic areas on mount
+  useEffect(() => {
+    getMohClinicAreas()
+      .then((areas) => {
+        if (Array.isArray(areas)) {
+          setClinicAreas(areas);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load real history from /api/moh/reports/history
+  const loadHistory = useCallback(async () => {
+    try {
+      const past = await getMohReportHistory(historyFilter);
+      if (Array.isArray(past)) {
+        const formatted: PastReport[] = past.map((p: any) => ({
+          id: p.id || p._id,
+          name: p.fileName || `${p.period?.label || "Period"} Report`,
+          period: p.period?.label || p.type,
+          type:
+            p.type === "weekly"
+              ? "Weekly"
+              : p.type === "monthly"
+              ? "Monthly"
+              : "Area-wise",
+          format: p.format === "xlsx" ? "excel" : p.format,
+          date: new Date(p.createdAt).toLocaleDateString("en-GB", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          }),
+          size: p.fileSize ? `${Math.round(p.fileSize / 1024)} KB` : "1.2 MB",
+          compliance: 0,
+          immunization: 0,
+          highRisk: 0,
+          missed: 0,
+          parameters: p.parameters,
+        }));
+        setHistoryReports(formatted);
+      }
+    } catch {
+      // keep existing
+    }
+  }, [historyFilter]);
+
+  useEffect(() => {
+    if (currentScreen === "history") {
+      loadHistory();
+    }
+  }, [currentScreen, loadHistory]);
 
   // Toggle report content checkbox
   const toggleContentItem = (id: string) => {
@@ -229,110 +266,143 @@ export function MOHReportsScreen({
     );
   };
 
-  // Generate Report Handler (Screen 1 -> Screen 2)
+  // Generate Report Handler (Screen 1 -> Screen 2 with live /api/moh/reports/data)
   const handleGenerateReport = async () => {
-    let title = "";
-    let periodOrZone = "";
-    let zoneName = "District Wide";
-
-    if (reportType === "Weekly") {
-      periodOrZone = AVAILABLE_WEEKS[selectedWeekIndex];
-      title = `${periodOrZone} Report`;
-    } else if (reportType === "Monthly") {
-      periodOrZone = AVAILABLE_MONTHS[selectedMonthIndex];
-      title = `${periodOrZone} Report`;
-    } else {
-      periodOrZone = selectedZone;
-      zoneName = selectedZone;
-      title = `${selectedZone} Report`;
-    }
-
-    const period = new Date().toISOString().slice(0, 7);
-    let metrics = { compliance: 0, immunization: 0, highRisk: 0, missed: 0 };
-    try {
-      const [summary, missedReport] = await Promise.all([
-        api<{ compliance?: number; immunization?: number; highRisk?: number }>("/reports/summary"),
-        api<{ byCategory?: Array<{ count: number }> }>(`/reports/missed?period=${period}`),
-      ]);
-      metrics = {
-        compliance: Number(summary.compliance || 0),
-        immunization: Number(summary.immunization || 0),
-        highRisk: Number(summary.highRisk || 0),
-        missed: (missedReport.byCategory || []).reduce((total, row) => total + Number(row.count || 0), 0),
-      };
-    } catch {
-      showToast("Could not load live report data. Showing zero values until the API is available.");
-    }
-
-    setActiveReportData({
-      title,
-      periodOrZone,
-      timestamp: "Generated today at 2:45 PM • Official Return",
-      type: reportType,
-      compliance: metrics.compliance,
-      immunization: metrics.immunization,
-      highRisk: metrics.highRisk,
-      missed: metrics.missed,
-      zoneName,
-    });
-
     setIsPreviewLoading(true);
     setCurrentScreen("preview");
-    setTimeout(() => {
+
+    try {
+      let title = "";
+      let periodOrZone = "";
+      let zoneName = "All Zones";
+      const params: any = {
+        type:
+          reportType === "Weekly"
+            ? "weekly"
+            : reportType === "Monthly"
+            ? "monthly"
+            : "area",
+        include: selectedContents.join(","),
+      };
+
+      if (reportType === "Weekly") {
+        const wk = AVAILABLE_WEEKS[selectedWeekIndex] || AVAILABLE_WEEKS[0];
+        params.from = wk.from;
+        params.to = wk.to;
+        periodOrZone = wk.label;
+        title = `${wk.label} Return`;
+      } else if (reportType === "Monthly") {
+        const mo = AVAILABLE_MONTHS[selectedMonthIndex] || AVAILABLE_MONTHS[0];
+        params.month = mo.month;
+        periodOrZone = mo.label;
+        title = `${mo.label} Return`;
+      } else {
+        if (selectedZoneId && selectedZoneId !== "all") {
+          params.clinicAreaId = selectedZoneId;
+        }
+        periodOrZone = selectedZoneName;
+        zoneName = selectedZoneName;
+        title = `${selectedZoneName} Area Return`;
+      }
+
+      const res = await getMohReportData(params);
+
+      setActiveReportData({
+        title,
+        periodOrZone: res.period?.label || periodOrZone,
+        timestamp: `Generated ${new Date(res.generatedAt || Date.now()).toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })} • Official Return`,
+        type: reportType,
+        compliance: res.summary?.visitCompliance?.value ?? null,
+        immunization: res.summary?.immunizationCoverage?.value ?? null,
+        highRisk: res.summary?.highRiskCases?.value ?? null,
+        missed: res.summary?.missedVisits?.value ?? null,
+        zoneName,
+        zoneBreakdown: res.zoneBreakdown || [],
+        districtAverage: res.districtAverage ?? null,
+        chartSeries: res.chartSeries || [],
+        params,
+      });
+    } catch (err: any) {
+      showToast(err?.message || "Could not load live report data.");
+    } finally {
       setIsPreviewLoading(false);
-    }, 550);
+    }
   };
 
   // Open Preview from History (Screen 4 -> Screen 2)
-  const handleOpenHistoryReport = (rep: PastReport) => {
-    setActiveReportData({
-      title: rep.name,
-      periodOrZone: rep.period,
-      timestamp: `Generated on ${rep.date} • ${rep.size}`,
-      type: rep.type,
-      compliance: rep.compliance,
-      immunization: rep.immunization,
-      highRisk: rep.highRisk,
-      missed: rep.missed,
-      zoneName: rep.zone || "District Wide",
-    });
-    setIsPreviewLoading(false);
+  const handleOpenHistoryReport = async (rep: PastReport) => {
+    setIsPreviewLoading(true);
     setCurrentScreen("preview");
+    try {
+      const params = rep.parameters || {
+        type: rep.type.toLowerCase(),
+      };
+      const res = await getMohReportData(params);
+      setActiveReportData({
+        title: rep.name,
+        periodOrZone: res.period?.label || rep.period,
+        timestamp: `Archived on ${rep.date} • ${rep.size}`,
+        type: rep.type,
+        compliance: res.summary?.visitCompliance?.value ?? null,
+        immunization: res.summary?.immunizationCoverage?.value ?? null,
+        highRisk: res.summary?.highRiskCases?.value ?? null,
+        missed: res.summary?.missedVisits?.value ?? null,
+        zoneName: rep.zone || "District Wide",
+        zoneBreakdown: res.zoneBreakdown || [],
+        districtAverage: res.districtAverage ?? null,
+        chartSeries: res.chartSeries || [],
+        params,
+      });
+    } catch {
+      setActiveReportData({
+        title: rep.name,
+        periodOrZone: rep.period,
+        timestamp: `Archived on ${rep.date} • ${rep.size}`,
+        type: rep.type,
+        compliance: rep.compliance ?? null,
+        immunization: rep.immunization ?? null,
+        highRisk: rep.highRisk ?? null,
+        missed: rep.missed ?? null,
+        zoneName: rep.zone || "District Wide",
+        zoneBreakdown: [],
+        districtAverage: null,
+        chartSeries: [],
+        params: { type: rep.type.toLowerCase() },
+      });
+    } finally {
+      setIsPreviewLoading(false);
+    }
   };
 
-  // Download row selection handler (Screen 3)
-  const handleSelectDownloadFormat = (fmt: DownloadFormat) => {
+  // Download row selection handler (Screen 3 -> /api/moh/reports/download + Sharing)
+  const handleSelectDownloadFormat = async (fmt: DownloadFormat) => {
+    if (!activeReportData) return;
     setDownloadingFormat(fmt);
-    setTimeout(() => {
+
+    try {
+      await downloadMohReport({
+        ...activeReportData.params,
+        format: fmt === "excel" ? "xlsx" : fmt,
+      });
+
       setDownloadingFormat(null);
       setDownloadSuccessFormat(fmt);
+      showToast(`Report downloaded and opened`);
 
-      // Add to past downloads history
-      if (activeReportData) {
-        const newHist: PastReport = {
-          id: `rep-${Date.now()}`,
-          name: activeReportData.title,
-          period: activeReportData.periodOrZone,
-          type: activeReportData.type,
-          format: fmt,
-          date: "Oct 06, 2026",
-          size: fmt === "pdf" ? "1.3 MB" : fmt === "excel" ? "780 KB" : "590 KB",
-          compliance: activeReportData.compliance,
-          immunization: activeReportData.immunization,
-          highRisk: activeReportData.highRisk,
-          missed: activeReportData.missed,
-          zone: activeReportData.zoneName,
-        };
-        setHistoryReports((prev) => [newHist, ...prev]);
-      }
+      // Refresh history list
+      loadHistory();
 
-      // Auto dismiss modal after short delay
       setTimeout(() => {
         setDownloadSuccessFormat(null);
         setDownloadModalVisible(false);
-        showToast("Report saved to downloads");
-      }, 1100);
-    }, 900);
+      }, 1200);
+    } catch (err: any) {
+      setDownloadingFormat(null);
+      showToast(err?.message || "Failed to download report");
+    }
   };
 
   return (
@@ -354,21 +424,21 @@ export function MOHReportsScreen({
           onOpenHistory={() => setCurrentScreen("history")}
           reportType={reportType}
           onSelectReportType={setReportType}
-          currentWeek={AVAILABLE_WEEKS[selectedWeekIndex]}
+          currentWeek={AVAILABLE_WEEKS[selectedWeekIndex]?.label || ""}
           onPrevWeek={() =>
             setSelectedWeekIndex((prev) => Math.min(prev + 1, AVAILABLE_WEEKS.length - 1))
           }
           onNextWeek={() => setSelectedWeekIndex((prev) => Math.max(prev - 1, 0))}
           hasPrevWeek={selectedWeekIndex < AVAILABLE_WEEKS.length - 1}
           hasNextWeek={selectedWeekIndex > 0}
-          currentMonth={AVAILABLE_MONTHS[selectedMonthIndex]}
+          currentMonth={AVAILABLE_MONTHS[selectedMonthIndex]?.label || ""}
           onPrevMonth={() =>
             setSelectedMonthIndex((prev) => Math.min(prev + 1, AVAILABLE_MONTHS.length - 1))
           }
           onNextMonth={() => setSelectedMonthIndex((prev) => Math.max(prev - 1, 0))}
           hasPrevMonth={selectedMonthIndex < AVAILABLE_MONTHS.length - 1}
           hasNextMonth={selectedMonthIndex > 0}
-          selectedZone={selectedZone}
+          selectedZone={selectedZoneName}
           onOpenZonePicker={() => setZonePickerVisible(true)}
           selectedContents={selectedContents}
           onToggleContent={toggleContentItem}
@@ -384,7 +454,7 @@ export function MOHReportsScreen({
           selectedContents={selectedContents}
           isLoading={isPreviewLoading}
           onBack={() => setCurrentScreen("home")}
-          onShare={() => showToast("Share link copied to clipboard")}
+          onShare={() => showToast("Ready to download and share")}
           onDownload={() => {
             setDownloadingFormat(null);
             setDownloadSuccessFormat(null);
@@ -403,7 +473,18 @@ export function MOHReportsScreen({
           filter={historyFilter}
           onFilterChange={setHistoryFilter}
           onSelectReport={handleOpenHistoryReport}
-          onQuickDownload={(rep) => showToast(`Downloading ${rep.name}...`)}
+          onQuickDownload={async (rep) => {
+            try {
+              showToast(`Downloading ${rep.name}...`);
+              await downloadMohReport({
+                ...rep.parameters,
+                format: rep.format === "excel" ? "xlsx" : rep.format,
+              });
+              showToast("Report saved & shared");
+            } catch (err: any) {
+              showToast(err?.message || "Download failed");
+            }
+          }}
         />
       )}
 
@@ -423,9 +504,11 @@ export function MOHReportsScreen({
       {/* Zone Picker Modal (for Area-wise) */}
       <ZoneSelectModal
         visible={zonePickerVisible}
-        currentZone={selectedZone}
-        onSelectZone={(zone) => {
-          setSelectedZone(zone);
+        clinicAreas={clinicAreas}
+        currentZone={selectedZoneName}
+        onSelectZone={(id, name) => {
+          setSelectedZoneId(id);
+          setSelectedZoneName(name);
           setZonePickerVisible(false);
         }}
         onClose={() => setZonePickerVisible(false)}
@@ -701,17 +784,7 @@ function Screen1ReportsHome({
 // SCREEN 2: Report Preview
 // ─────────────────────────────────────────────────────────────
 interface Screen2Props {
-  report: {
-    title: string;
-    periodOrZone: string;
-    timestamp: string;
-    type: ReportType;
-    compliance: number;
-    immunization: number;
-    highRisk: number;
-    missed: number;
-    zoneName: string;
-  };
+  report: ActiveReportModel;
   selectedContents: string[];
   isLoading: boolean;
   onBack: () => void;
@@ -780,7 +853,7 @@ function Screen2ReportPreview({
 
             <View style={styles.indicatorGrid}>
               {/* Visit Compliance */}
-              {selectedContents.includes("compliance") && (
+              {(selectedContents.includes("compliance") || selectedContents.includes("visitCompliance")) && (
                 <View style={styles.indicatorCard}>
                   <View style={styles.indicatorCardTop}>
                     <Text style={styles.indicatorLabel}>VISIT COMPLIANCE</Text>
@@ -788,8 +861,10 @@ function Screen2ReportPreview({
                       <Ionicons name="checkmark-done" size={15} color={SUCCESS_TEXT} />
                     </View>
                   </View>
-                  <Text style={styles.indicatorValue}>{report.compliance}%</Text>
-                  <Text style={styles.indicatorSubtext}>District target: 80%</Text>
+                  <Text style={styles.indicatorValue}>
+                    {report.compliance != null ? `${report.compliance}%` : "No data"}
+                  </Text>
+                  <Text style={styles.indicatorSubtext}>District target: 85%</Text>
                 </View>
               )}
 
@@ -802,8 +877,10 @@ function Screen2ReportPreview({
                       <Ionicons name="shield-checkmark" size={15} color={PRIMARY} />
                     </View>
                   </View>
-                  <Text style={styles.indicatorValue}>{report.immunization}%</Text>
-                  <Text style={styles.indicatorSubtext}>142 / 152 verified infants</Text>
+                  <Text style={styles.indicatorValue}>
+                    {report.immunization != null ? `${report.immunization}%` : "No data"}
+                  </Text>
+                  <Text style={styles.indicatorSubtext}>National target: 95%</Text>
                 </View>
               )}
 
@@ -816,13 +893,15 @@ function Screen2ReportPreview({
                       <Ionicons name="alert" size={15} color={WARNING_TEXT} />
                     </View>
                   </View>
-                  <Text style={styles.indicatorValue}>{report.highRisk}</Text>
+                  <Text style={styles.indicatorValue}>
+                    {report.highRisk != null ? report.highRisk : "No data"}
+                  </Text>
                   <Text style={styles.indicatorSubtext}>Flagged for clinical review</Text>
                 </View>
               )}
 
               {/* Missed Visits */}
-              {selectedContents.includes("missed") && (
+              {(selectedContents.includes("missed") || selectedContents.includes("missedVisits")) && (
                 <View style={styles.indicatorCard}>
                   <View style={styles.indicatorCardTop}>
                     <Text style={styles.indicatorLabel}>MISSED VISITS</Text>
@@ -830,8 +909,10 @@ function Screen2ReportPreview({
                       <Ionicons name="close-circle" size={15} color={DANGER_TEXT} />
                     </View>
                   </View>
-                  <Text style={styles.indicatorValue}>{report.missed}</Text>
-                  <Text style={styles.indicatorSubtext}>Overdue &gt; 14 days</Text>
+                  <Text style={styles.indicatorValue}>
+                    {report.missed != null ? report.missed : "No data"}
+                  </Text>
+                  <Text style={styles.indicatorSubtext}>Scheduled visits past due date</Text>
                 </View>
               )}
             </View>
@@ -840,57 +921,77 @@ function Screen2ReportPreview({
           {/* Bar Chart Section (Zone Visit Compliance Bar Chart Style) */}
           <View style={styles.chartCard}>
             <View style={styles.chartHeaderRow}>
-              <Text style={styles.chartCardTitle}>ZONE VISIT COMPLIANCE (%)</Text>
+              <Text style={styles.chartCardTitle}>CLINIC AREA VISIT COMPLIANCE (%)</Text>
               <Text style={styles.chartCardHint}>Division Breakdown</Text>
             </View>
 
             <View style={styles.barChartContainer}>
-              {ZONES.filter((z) => z.id !== "all").map((zone) => {
-                const maxBarHeight = 100;
-                const barHeight = (zone.compliance / 100) * maxBarHeight;
-                const isSelected =
-                  report.type === "Area-wise" &&
-                  report.periodOrZone.toLowerCase().includes(zone.name.toLowerCase());
+              {report.zoneBreakdown && report.zoneBreakdown.length > 0 ? (
+                report.zoneBreakdown.map((zone) => {
+                  const maxBarHeight = 100;
+                  const complianceVal = zone.compliance != null ? Number(zone.compliance) : null;
+                  const barHeight =
+                    complianceVal != null
+                      ? Math.min(100, Math.max(8, (complianceVal / 100) * maxBarHeight))
+                      : 8;
+                  const isSelected =
+                    report.type === "Area-wise" &&
+                    report.periodOrZone.toLowerCase().includes(zone.name.toLowerCase());
 
-                const barColor =
-                  zone.compliance >= 80 ? PRIMARY : zone.compliance >= 70 ? WARNING : DANGER;
+                  const barColor =
+                    complianceVal == null
+                      ? "#CBD5E1"
+                      : complianceVal >= 85
+                      ? SUCCESS
+                      : complianceVal >= 75
+                      ? WARNING
+                      : DANGER;
 
-                return (
-                  <View key={zone.id} style={styles.barColumn}>
-                    <Text
-                      style={[
-                        styles.barValueText,
-                        isSelected && { color: PRIMARY, fontWeight: "900" },
-                      ]}
-                    >
-                      {zone.compliance}%
-                    </Text>
-                    <View style={styles.barTrack}>
-                      <View
+                  return (
+                    <View key={zone.clinicAreaId || zone.name} style={styles.barColumn}>
+                      <Text
                         style={[
-                          styles.barFill,
-                          { height: barHeight, backgroundColor: barColor },
-                          isSelected && styles.barFillSelected,
+                          styles.barValueText,
+                          isSelected && { color: PRIMARY, fontWeight: "900" },
                         ]}
-                      />
+                      >
+                        {complianceVal != null ? `${complianceVal}%` : "N/A"}
+                      </Text>
+                      <View style={styles.barTrack}>
+                        <View
+                          style={[
+                            styles.barFill,
+                            { height: barHeight, backgroundColor: barColor },
+                            isSelected && styles.barFillSelected,
+                          ]}
+                        />
+                      </View>
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.barZoneName,
+                          isSelected && { color: TEXT_MAIN, fontWeight: "800" },
+                        ]}
+                      >
+                        {zone.name}
+                      </Text>
                     </View>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.barZoneName,
-                        isSelected && { color: TEXT_MAIN, fontWeight: "800" },
-                      ]}
-                    >
-                      {zone.name}
-                    </Text>
-                  </View>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 24 }}>
+                  <Text style={{ color: TEXT_MUTED, fontSize: 13 }}>
+                    No clinic area visit records in this period
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.chartFooterRow}>
               <Text style={styles.chartFooterLabel}>Weighted Divisional Average</Text>
-              <Text style={styles.chartFooterValue}>78%</Text>
+              <Text style={styles.chartFooterValue}>
+                {report.districtAverage != null ? `${report.districtAverage}%` : "No data"}
+              </Text>
             </View>
           </View>
 
@@ -899,7 +1000,7 @@ function Screen2ReportPreview({
             <Text style={styles.chartCardTitle}>STATISTICAL BREAKDOWN</Text>
 
             <View style={styles.tableHeaderRow}>
-              <Text style={[styles.tableHeaderCol, { flex: 2 }]}>ZONE</Text>
+              <Text style={[styles.tableHeaderCol, { flex: 2 }]}>CLINIC AREA</Text>
               <Text style={[styles.tableHeaderCol, { flex: 1.5, textAlign: "center" }]}>
                 COMPL.
               </Text>
@@ -911,58 +1012,68 @@ function Screen2ReportPreview({
               </Text>
             </View>
 
-            {ZONES.map((zone, idx) => {
-              const isEven = idx % 2 === 0;
-              const isHighlight =
-                report.type === "Area-wise" &&
-                report.periodOrZone.toLowerCase().includes(zone.name.toLowerCase());
+            {report.zoneBreakdown && report.zoneBreakdown.length > 0 ? (
+              report.zoneBreakdown.map((zone, idx) => {
+                const isEven = idx % 2 === 0;
+                const isHighlight =
+                  report.type === "Area-wise" &&
+                  report.periodOrZone.toLowerCase().includes(zone.name.toLowerCase());
 
-              return (
-                <View
-                  key={zone.id}
-                  style={[
-                    styles.tableRow,
-                    isEven ? styles.tableRowEven : styles.tableRowOdd,
-                    isHighlight && styles.tableRowHighlight,
-                  ]}
-                >
-                  <Text
+                return (
+                  <View
+                    key={zone.clinicAreaId || zone.name}
                     style={[
-                      styles.tableCellZone,
-                      { flex: 2 },
-                      isHighlight && { color: PRIMARY, fontWeight: "800" },
+                      styles.tableRow,
+                      isEven ? styles.tableRowEven : styles.tableRowOdd,
+                      isHighlight && styles.tableRowHighlight,
                     ]}
                   >
-                    {zone.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.tableCellNormal,
-                      { flex: 1.5, textAlign: "center" },
-                      zone.compliance < 70 && { color: DANGER_TEXT, fontWeight: "700" },
-                    ]}
-                  >
-                    {zone.compliance}%
-                  </Text>
-                  <Text
-                    style={[
-                      styles.tableCellNormal,
-                      { flex: 1.5, textAlign: "center" },
-                    ]}
-                  >
-                    {zone.highRisk}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.tableCellNormal,
-                      { flex: 1.5, textAlign: "right", fontWeight: "700" },
-                    ]}
-                  >
-                    {zone.missed}
-                  </Text>
-                </View>
-              );
-            })}
+                    <Text
+                      style={[
+                        styles.tableCellZone,
+                        { flex: 2 },
+                        isHighlight && { color: PRIMARY, fontWeight: "800" },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {zone.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.tableCellNormal,
+                        { flex: 1.5, textAlign: "center" },
+                        zone.compliance != null &&
+                          zone.compliance < 75 && { color: DANGER_TEXT, fontWeight: "700" },
+                      ]}
+                    >
+                      {zone.compliance != null ? `${zone.compliance}%` : "N/A"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.tableCellNormal,
+                        { flex: 1.5, textAlign: "center" },
+                      ]}
+                    >
+                      {zone.highRisk ?? 0}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.tableCellNormal,
+                        { flex: 1.5, textAlign: "right", fontWeight: "700" },
+                      ]}
+                    >
+                      {zone.missed ?? 0}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                <Text style={{ color: TEXT_MUTED, fontSize: 13 }}>
+                  No clinic area breakdown records available
+                </Text>
+              </View>
+            )}
           </View>
         </ScrollView>
       )}
@@ -1313,30 +1424,34 @@ function Screen4ReportHistory({
 // ─────────────────────────────────────────────────────────────
 function ZoneSelectModal({
   visible,
+  clinicAreas,
   currentZone,
   onSelectZone,
   onClose,
 }: {
   visible: boolean;
+  clinicAreas: Array<{ _id: string; name: string }>;
   currentZone: string;
-  onSelectZone: (zone: string) => void;
+  onSelectZone: (id: string, name: string) => void;
   onClose: () => void;
 }) {
+  const options = [{ _id: "all", name: "All Zones" }, ...(clinicAreas || [])];
+
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.sheetModalCard} onPress={(e) => e.stopPropagation()}>
           <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Select Health Zone</Text>
-          <Text style={styles.sheetSubtitle}>Choose a division to generate area report</Text>
+          <Text style={styles.sheetTitle}>Select Clinic Area</Text>
+          <Text style={styles.sheetSubtitle}>Choose a clinic area to generate area return</Text>
 
           <View style={{ gap: 8, marginTop: 14 }}>
-            {ZONES.map((zone) => {
+            {options.map((zone) => {
               const isSel = currentZone === zone.name;
               return (
                 <Pressable
-                  key={zone.id}
-                  onPress={() => onSelectZone(zone.name)}
+                  key={zone._id}
+                  onPress={() => onSelectZone(zone._id, zone.name)}
                   style={[
                     styles.zoneOptionRow,
                     isSel && styles.zoneOptionRowActive,

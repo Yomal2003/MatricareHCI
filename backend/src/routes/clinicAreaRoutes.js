@@ -15,6 +15,7 @@ const {
   deactivateClinicArea,
   activateClinicArea,
   getClinicAreaStaff,
+  listClinicAreas,
 } = require("../controllers/clinicAreaController");
 const {
   validateCreateClinicArea,
@@ -24,6 +25,13 @@ const {
 // Require authentication and MOH role for all clinic area management routes
 router.use(authenticate);
 router.use(requireRole("MOH"));
+
+/**
+ * @route   GET /api/moh/clinic-areas
+ * @desc    List all clinic areas in the doctor's MOH office
+ * @access  Protected (MOH only)
+ */
+router.get("/", listClinicAreas);
 
 /**
  * @route   POST /api/moh/clinic-areas

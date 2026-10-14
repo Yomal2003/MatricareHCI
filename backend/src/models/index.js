@@ -9,4 +9,8 @@ module.exports = {
   QueueEntry: require("./QueueEntry"),
   Alert: require("./Alert"),
   FamilyNotification: require("./FamilyNotification"),
+  ReportHistory: require("./ReportHistory"),
+  MohOffice: require("./MohOffice"),
+  ClinicArea: require("./ClinicArea").ClinicArea,
+  Staff: require("./Staff").Staff,
 };

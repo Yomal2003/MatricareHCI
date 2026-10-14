@@ -257,10 +257,42 @@ async function getClinicAreaStaff(req, res) {
   }
 }
 
+/**
+ * GET /api/moh/clinic-areas
+ * Lists all clinic areas in the doctor's MOH office.
+ */
+async function listClinicAreas(req, res) {
+  try {
+    const mohOfficeId = req.user?.mohOfficeId;
+    if (!mohOfficeId) {
+      return res.status(400).json({
+        message: "No MOH office assigned to this account",
+      });
+    }
+
+    const filter = { mohOfficeId };
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    const clinicAreas = await ClinicArea.find(filter).sort({ name: 1 });
+    return res.json({
+      count: clinicAreas.length,
+      clinicAreas,
+    });
+  } catch (error) {
+    console.error("❌ Error in listClinicAreas controller:", error);
+    return res.status(500).json({
+      message: "An error occurred while retrieving clinic areas",
+    });
+  }
+}
+
 module.exports = {
   createClinicArea,
   updateClinicArea,
   deactivateClinicArea,
   activateClinicArea,
   getClinicAreaStaff,
+  listClinicAreas,
 };

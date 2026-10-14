@@ -44,11 +44,23 @@ const validateStaffInput = [
     .withMessage(`Role must be one of: ${STAFF_ROLES.join(", ")}`),
 
   body("clinicAreaId")
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty()
-    .withMessage("Clinic area ID is required")
     .isMongoId()
     .withMessage("Invalid clinic area ID format"),
+
+  body("zone")
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Zone must be between 1 and 100 characters"),
+
+  body().custom((body) => {
+    if (!body.clinicAreaId && !body.zone) {
+      throw new Error("Either clinicAreaId or zone is required");
+    }
+    return true;
+  }),
 
   body("phone")
     .trim()
@@ -111,12 +123,16 @@ async function createStaff(req, res) {
     // 2. Resolve clinic area: find existing or create active area for this zone
     let clinicArea = clinicAreaId ? await ClinicArea.findById(clinicAreaId) : null;
     if (!clinicArea) {
-      const zoneName = zone || "Buttala";
-      clinicArea = await ClinicArea.findOne({ name: new RegExp(`^${zoneName}$`, "i") });
+      const zoneName = (zone || "Buttala").trim();
+      const escapedZone = zoneName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      clinicArea = await ClinicArea.findOne({
+        mohOfficeId,
+        name: { $regex: new RegExp(`^${escapedZone}$`, "i") },
+      });
       if (!clinicArea) {
         clinicArea = await ClinicArea.create({
           name: zoneName,
-          type: "Rural Clinic",
+          type: "MCH_CLINIC",
           mohOfficeId,
           status: "active",
         });

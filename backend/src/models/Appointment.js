@@ -15,6 +15,8 @@ const appointmentSchema = new mongoose.Schema(
       default: "pending",
     },
     phmArea: String,
+    clinicAreaId: { type: mongoose.Schema.Types.ObjectId, ref: "ClinicArea", index: true },
+    mohOfficeId: { type: mongoose.Schema.Types.ObjectId, ref: "MohOffice", index: true },
     notes: { type: String, trim: true, maxlength: 1000 },
     rejectionReason: { type: String, trim: true, maxlength: 500 },
     rescheduledNotes: { type: String, trim: true, maxlength: 500 },
@@ -22,5 +24,6 @@ const appointmentSchema = new mongoose.Schema(
   { timestamps: true },
 );
 appointmentSchema.index({ date: 1, status: 1 });
+appointmentSchema.index({ mohOfficeId: 1, clinicAreaId: 1, date: 1, status: 1 });
 
 module.exports = mongoose.model("Appointment", appointmentSchema);

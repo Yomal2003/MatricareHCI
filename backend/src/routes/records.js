@@ -6,6 +6,44 @@ const { ah, HttpError } = require("../utils/http");
 
 const DANGER = ["High BP", "Bleeding", "Reduced movements"];
 
+async function resolveStaffAssignment(user, mother = null) {
+  let mohOfficeId = user?.mohOfficeId;
+  let clinicAreaId = user?.clinicAreaId;
+
+  if (!mohOfficeId || !clinicAreaId) {
+    const { Staff } = require("../models/Staff");
+    const staff = await Staff.findOne({
+      $or: [
+        ...(user?._id ? [{ _id: user._id }] : []),
+        ...(user?.staffId ? [{ username: String(user.staffId).toUpperCase() }] : []),
+      ],
+    });
+    if (staff) {
+      mohOfficeId = mohOfficeId || staff.mohOfficeId;
+      clinicAreaId = clinicAreaId || staff.clinicAreaId;
+    }
+  }
+
+  if ((!mohOfficeId || !clinicAreaId) && mother) {
+    mohOfficeId = mohOfficeId || mother.mohOfficeId;
+    clinicAreaId = clinicAreaId || mother.clinicAreaId;
+  }
+
+  if ((!mohOfficeId || !clinicAreaId) && user?.area) {
+    const { ClinicArea } = require("../models/ClinicArea");
+    const cleanName = String(user.area).replace(/\b(clinic|division|moh|health|office)\b/gi, "").trim();
+    const ca = await ClinicArea.findOne({
+      name: new RegExp(`^${cleanName || user.area}$`, "i"),
+    });
+    if (ca) {
+      clinicAreaId = clinicAreaId || ca._id;
+      mohOfficeId = mohOfficeId || ca.mohOfficeId;
+    }
+  }
+
+  return { mohOfficeId, clinicAreaId };
+}
+
 async function saveVisit(item, user) {
   const mId = String(item.motherId || item.mother || "").trim();
   let mother = await Mother.findOne(
@@ -15,18 +53,29 @@ async function saveVisit(item, user) {
     mother = await Mother.findOne({ name: new RegExp(item.motherName.trim(), "i") });
   }
   if (!mother) throw new HttpError(400, `Unknown mother ${item.motherId || item.mother || item.motherName}`);
+  const { mohOfficeId, clinicAreaId } = await resolveStaffAssignment(user, mother);
   const flags = item.risk || item.riskFlags || [];
   const visit = await Visit.create({
     type: item.type === "home-visit" ? "home-visit" : item.visitType || item.type || "clinic",
     mother: mother._id, date: item.date || item.createdAt || Date.now(),
     weight: num(item.weight), bp: item.bp, hb: num(item.hb), riskFlags: flags, notes: item.notes,
     recordedBy: user._id, localId: item.localId,
+    clinicAreaId,
+    mohOfficeId,
   });
   mother.vitals = { weight: num(item.weight) ?? mother.vitals?.weight, bp: item.bp || mother.vitals?.bp, hb: num(item.hb) ?? mother.vitals?.hb, updatedAt: new Date() };
   if (flags.length) {
     mother.riskFlags = [...new Set([...(mother.riskFlags || []), ...flags])];
     mother.risk = flags.some((f) => DANGER.includes(f)) ? "high" : mother.risk === "high" ? "high" : "medium";
-    await Alert.create({ mother: mother._id, level: mother.risk === "high" ? "danger" : "warn", reason: flags.join(", "), area: mother.village });
+    await Alert.create({
+      mother: mother._id,
+      level: mother.risk === "high" ? "danger" : "warn",
+      reason: flags.join(", "),
+      area: mother.village,
+      clinicAreaId,
+      mohOfficeId,
+      flaggedBy: user._id,
+    });
   }
   await mother.save();
   return visit;
@@ -43,6 +92,8 @@ async function saveGrowth(item, user) {
     if (mother) child = await Child.findOne({ mother: mother._id, "deleteAudit.isDeleted": { $ne: true } });
   }
   if (!child) throw new HttpError(400, `Unknown child ${code || item.childName}`);
+  const parentMother = child.mother ? await Mother.findById(child.mother) : null;
+  const { mohOfficeId, clinicAreaId } = await resolveStaffAssignment(user, parentMother);
   const growth = await Growth.create({
     child: child._id,
     weight: num(item.weight),
@@ -53,6 +104,8 @@ async function saveGrowth(item, user) {
     date: item.date || item.createdAt || Date.now(),
     recordedBy: user._id,
     localId: item.localId,
+    clinicAreaId,
+    mohOfficeId,
   });
   return growth;
 }
@@ -68,6 +121,7 @@ async function saveImmunization(item, user) {
     child = await Child.findOne({ name: new RegExp(item.childName.trim(), "i") });
   }
   if (!child && !mother) throw new HttpError(400, `Unknown child/mother ${code || item.motherName}`);
+  const { mohOfficeId, clinicAreaId } = await resolveStaffAssignment(user, mother);
   const out = [];
 
   const vaccineList = Array.isArray(item.vaccines) && item.vaccines.length > 0
@@ -85,6 +139,8 @@ async function saveImmunization(item, user) {
       date: item.date || item.createdAt || Date.now(),
       recordedBy: user._id,
       localId: item.localId,
+      clinicAreaId,
+      mohOfficeId,
     }));
   }
 
@@ -99,6 +155,8 @@ async function saveImmunization(item, user) {
       date: item.date || item.createdAt || Date.now(),
       recordedBy: user._id,
       localId: item.localId,
+      clinicAreaId,
+      mohOfficeId,
     }));
   }
   return out;

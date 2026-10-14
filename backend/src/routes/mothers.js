@@ -116,10 +116,35 @@ router.post("/", authorize("mothers:write"), ah(async (req, res) => {
     }
   }
 
+  // Derive clinicAreaId and mohOfficeId from assigned PHM or user
+  let mohOfficeId = req.user?.mohOfficeId;
+  let clinicAreaId = req.user?.clinicAreaId;
+  if (!mohOfficeId || !clinicAreaId) {
+    const phmUser = assignedPhmId ? await User.findById(assignedPhmId) : null;
+    if (phmUser) {
+      mohOfficeId = mohOfficeId || phmUser.mohOfficeId;
+      clinicAreaId = clinicAreaId || phmUser.clinicAreaId;
+    }
+  }
+  if (!clinicAreaId) {
+    const { ClinicArea } = require("../models/ClinicArea");
+    const targetArea = req.body.phmArea || req.body.village || req.user?.area;
+    if (targetArea) {
+      const cleanName = String(targetArea).replace(/\b(clinic|division|moh|health|office)\b/gi, "").trim();
+      const ca = await ClinicArea.findOne({ name: new RegExp(`^${cleanName || targetArea}$`, "i") });
+      if (ca) {
+        clinicAreaId = ca._id;
+        mohOfficeId = mohOfficeId || ca.mohOfficeId;
+      }
+    }
+  }
+
   const mother = await Mother.create({
     ...pick(req.body, FIELDS),
     code: req.body.code || `M-${1000 + count + 1}`,
     assignedPhm: assignedPhmId,
+    clinicAreaId,
+    mohOfficeId,
   });
 
   // Also create linked User account for mother login (if phone provided and not yet registered)

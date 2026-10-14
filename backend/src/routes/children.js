@@ -63,6 +63,8 @@ router.post("/", authorize("children:write"), ah(async (req, res) => {
     headCircumference: req.body.headCircumference ? Number(req.body.headCircumference) : undefined,
     deliveryMode: req.body.deliveryMode || "Spontaneous Vaginal",
     birthHospital: req.body.birthHospital || "Monaragala District Base Hospital",
+    clinicAreaId: mother.clinicAreaId || req.user?.clinicAreaId,
+    mohOfficeId: mother.mohOfficeId || req.user?.mohOfficeId,
     notes: req.body.notes,
   });
 

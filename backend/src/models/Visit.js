@@ -12,9 +12,13 @@ const visitSchema = new mongoose.Schema(
     riskFlags: [String],
     notes: String,
     recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    clinicAreaId: { type: mongoose.Schema.Types.ObjectId, ref: "ClinicArea", index: true },
+    mohOfficeId: { type: mongoose.Schema.Types.ObjectId, ref: "MohOffice", index: true },
     localId: { type: String, index: true, sparse: true }, // offline client id, used to dedupe sync
   },
   { timestamps: true },
 );
+
+visitSchema.index({ mohOfficeId: 1, clinicAreaId: 1, date: -1 });
 
 module.exports = mongoose.model("Visit", visitSchema);

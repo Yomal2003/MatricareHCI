@@ -16,6 +16,8 @@ const childSchema = new mongoose.Schema(
     headCircumference: Number, // in cm
     deliveryMode: { type: String, default: "Spontaneous Vaginal" },
     birthHospital: { type: String, default: "Monaragala District Base Hospital" },
+    clinicAreaId: { type: mongoose.Schema.Types.ObjectId, ref: "ClinicArea", index: true },
+    mohOfficeId: { type: mongoose.Schema.Types.ObjectId, ref: "MohOffice", index: true },
     notes: String,
     deleteAudit: {
       isDeleted: { type: Boolean, default: false },
@@ -26,6 +28,8 @@ const childSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+childSchema.index({ mohOfficeId: 1, clinicAreaId: 1, dob: -1 });
 
 module.exports = mongoose.model("Child", childSchema);
 

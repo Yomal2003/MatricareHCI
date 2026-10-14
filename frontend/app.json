@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "extra": {
-      "apiUrl": "http://192.168.8.198:4000"
+      "apiUrl": "http://10.56.15.217:4000"
     },
     "platforms": [
       "ios",
@@ -16,7 +16,8 @@
     "plugins": [
       "expo-asset",
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-sharing"
     ]
   }
 }
