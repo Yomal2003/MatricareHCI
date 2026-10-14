@@ -3,12 +3,17 @@ const { Child, Mother, Immunization, Growth } = require("../models");
 const { authorize } = require("../middleware/auth");
 const { ah, HttpError, pick } = require("../utils/http");
 
-const findChildByCode = (code) =>
-  Child.findOne({ code: String(code).toUpperCase(), "deleteAudit.isDeleted": { $ne: true } })
+const findChildByCode = (key) => {
+  const isOid = /^[0-9a-f]{24}$/i.test(String(key));
+  const filter = isOid
+    ? { _id: key, "deleteAudit.isDeleted": { $ne: true } }
+    : { code: String(key).toUpperCase(), "deleteAudit.isDeleted": { $ne: true } };
+  return Child.findOne(filter)
     .populate({
       path: "mother",
       populate: { path: "assignedPhm", select: "name staffId phone badge area locations qualifications" },
     });
+};
 
 router.get("/", authorize("children:read"), ah(async (req, res) => {
   const filter = { "deleteAudit.isDeleted": { $ne: true } };
@@ -149,9 +154,21 @@ router.patch("/:code", authorize("children:write"), ah(async (req, res) => {
   const child = await findChildByCode(req.params.code);
   if (!child) throw new HttpError(404, "Child record not found");
 
-  const fields = ["name", "dob", "edd", "sex", "birthWeight", "birthLength", "headCircumference", "deliveryMode", "birthHospital", "notes"];
-  Object.assign(child, pick(req.body, fields));
+  const fields = ["name", "dob", "edd", "sex", "birthWeight", "birthLength", "headCircumference", "deliveryMode", "birthHospital", "notes", "status", "gestationalWeeks"];
+  const updates = pick(req.body, fields);
+  if (req.body.weight !== undefined && updates.birthWeight === undefined) {
+    updates.birthWeight = Number(req.body.weight);
+  }
+  if (req.body.length !== undefined && updates.birthLength === undefined) {
+    updates.birthLength = Number(req.body.length);
+  }
+  Object.assign(child, updates);
   await child.save();
+
+  // If mother name was updated in request, update the mother document as well
+  if (req.body.motherName && child.mother) {
+    await Mother.findByIdAndUpdate(child.mother, { $set: { name: req.body.motherName.trim() } });
+  }
 
   const updated = await findChildByCode(child.code);
   res.json(updated);

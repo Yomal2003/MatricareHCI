@@ -196,9 +196,11 @@ router.post("/immunizations", authorize("immunizations:write"), ah(async (req, r
 }));
 
 router.patch("/immunizations/:id", authorize("immunizations:write"), ah(async (req, res) => {
+  const payload = { ...req.body };
+  if (payload.lotNumber && !payload.batch) payload.batch = payload.lotNumber;
   const updated = await Immunization.findByIdAndUpdate(
     req.params.id,
-    { $set: req.body },
+    { $set: payload },
     { new: true, runValidators: true }
   );
   if (!updated) throw new HttpError(404, "Immunization record not found");
@@ -219,7 +221,11 @@ router.get("/growth", authorize("children:read"), ah(async (req, res) => {
     if (child) filter.child = child._id;
   }
   const records = await Growth.find(filter)
-    .populate("child", "name code dob isUnborn status")
+    .populate({
+      path: "child",
+      select: "name code dob isUnborn status mother",
+      populate: { path: "mother", select: "name code village" },
+    })
     .populate("recordedBy", "name badge")
     .sort({ date: -1 })
     .limit(100);
@@ -232,9 +238,11 @@ router.post("/growth", authorize("growth:write"), ah(async (req, res) => {
 }));
 
 router.patch("/growth/:id", authorize("growth:write"), ah(async (req, res) => {
+  const payload = { ...req.body };
+  if (payload.length !== undefined && payload.height === undefined) payload.height = payload.length;
   const updated = await Growth.findByIdAndUpdate(
     req.params.id,
-    { $set: req.body },
+    { $set: payload },
     { new: true, runValidators: true }
   );
   if (!updated) throw new HttpError(404, "Growth record not found");

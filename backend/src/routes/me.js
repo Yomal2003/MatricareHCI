@@ -210,6 +210,9 @@ router.post("/appointments", authorize("self:appointments"), ah(async (req, res)
   res.status(201).json(appointment);
 }));
 
+const MOTHER_ACTIVE_STATUSES = ["pending", "upcoming", "confirmed", "rescheduled"];
+const isMotherActiveAppointment = (status) => MOTHER_ACTIVE_STATUSES.includes(status);
+
 router.patch("/appointments/:id", authorize("self:appointments"), ah(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(404, "Appointment not found");
   const mother = await myMother(req);
@@ -217,37 +220,84 @@ router.patch("/appointments/:id", authorize("self:appointments"), ah(async (req,
   if (!appointment) throw new HttpError(404, "Appointment not found");
   const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
   if (body.status !== undefined) throw new HttpError(403, "Mothers cannot change appointment outcomes");
-  if (appointment.status !== "upcoming") throw new HttpError(409, "Only upcoming appointments can be changed");
+  if (!isMotherActiveAppointment(appointment.status)) {
+    throw new HttpError(409, `Only active appointments (${MOTHER_ACTIVE_STATUSES.join(", ")}) can be changed`);
+  }
 
-  const allowedFields = ["type", "date", "place", "notes"];
-  if (Object.keys(body).some((field) => !allowedFields.includes(field))) {
+  const allowedFields = ["type", "date", "place", "notes", "category", "targetRole"];
+  const bodyKeys = Object.keys(body);
+  if (!bodyKeys.length) {
+    throw new HttpError(400, "Appointment changes are required");
+  }
+  if (bodyKeys.some((field) => !allowedFields.includes(field))) {
     throw new HttpError(400, "Only appointment details can be changed");
   }
+
+  const update = {};
   if (body.type !== undefined) {
-    if (typeof body.type !== "string" || !body.type.trim() || body.type.trim().length > 120) throw new HttpError(400, "Appointment type must be 1 to 120 characters");
-    appointment.type = body.type.trim();
+    if (typeof body.type !== "string" || !body.type.trim() || body.type.trim().length > 120) {
+      throw new HttpError(400, "Appointment type must be 1 to 120 characters");
+    }
+    update.type = body.type.trim();
   }
   if (body.date !== undefined) {
     const date = new Date(body.date);
-    if (typeof body.date !== "string" || !body.date.trim() || Number.isNaN(date.getTime())) throw new HttpError(400, "A valid appointment date and time are required");
-    appointment.date = date;
+    if (typeof body.date !== "string" || !body.date.trim() || Number.isNaN(date.getTime())) {
+      throw new HttpError(400, "A valid appointment date and time are required");
+    }
+    update.date = date;
   }
   if (body.place !== undefined) {
     if (typeof body.place !== "string") throw new HttpError(400, "Clinic must be text");
     if (body.place.trim().length > 240) throw new HttpError(400, "Clinic must be 240 characters or fewer");
-    appointment.place = body.place.trim();
+    update.place = body.place.trim();
   }
   if (body.notes !== undefined) {
     if (typeof body.notes !== "string") throw new HttpError(400, "Notes must be text");
     if (body.notes.trim().length > 1000) throw new HttpError(400, "Notes must be 1000 characters or fewer");
-    appointment.notes = body.notes.trim();
+    update.notes = body.notes.trim();
   }
-  if (!Object.keys(body).length) {
-    throw new HttpError(400, "Appointment changes are required");
+  if (body.category !== undefined) {
+    const validCategories = ["anc", "postnatal", "immunization", "growth", "home-visit", "scan"];
+    if (typeof body.category !== "string" || !validCategories.includes(body.category)) {
+      throw new HttpError(400, "Invalid appointment category");
+    }
+    update.category = body.category;
   }
-  await appointment.save();
+  if (body.targetRole !== undefined) {
+    if (body.targetRole !== "nursing" && body.targetRole !== "phm") {
+      throw new HttpError(400, "Target role must be nursing or phm");
+    }
+    update.targetRole = body.targetRole;
+  }
 
-  res.json(appointment);
+  // Consistent status policy:
+  // - If rescheduled by staff, mother's edit submits changes back for review (status -> "pending", clear rescheduled notes)
+  // - If confirmed, modifying schedule/place/targetRole returns status to "pending" for staff re-confirmation
+  if (appointment.status === "rescheduled") {
+    update.status = "pending";
+    update.rescheduledNotes = "";
+  } else if (appointment.status === "confirmed") {
+    if (body.date !== undefined || body.place !== undefined || body.targetRole !== undefined) {
+      update.status = "pending";
+    }
+  }
+
+  const updated = await Appointment.findOneAndUpdate(
+    {
+      _id: req.params.id,
+      mother: mother._id,
+      status: { $in: MOTHER_ACTIVE_STATUSES },
+    },
+    { $set: update },
+    { new: true, runValidators: true },
+  );
+
+  if (!updated) {
+    throw new HttpError(409, "Appointment could not be updated because its status has changed");
+  }
+
+  res.json(updated);
 }));
 
 router.delete("/appointments/:id", authorize("self:appointments"), ah(async (req, res) => {
@@ -255,10 +305,35 @@ router.delete("/appointments/:id", authorize("self:appointments"), ah(async (req
   const mother = await myMother(req);
   const appointment = await Appointment.findOne({ _id: req.params.id, mother: mother._id });
   if (!appointment) throw new HttpError(404, "Appointment not found");
-  if (appointment.status !== "upcoming") throw new HttpError(409, "Only upcoming appointments can be cancelled");
-  appointment.status = "cancelled";
-  await appointment.save();
-  res.json(appointment);
+  if (!isMotherActiveAppointment(appointment.status)) {
+    throw new HttpError(409, `Only active appointments (${MOTHER_ACTIVE_STATUSES.join(", ")}) can be cancelled`);
+  }
+
+  const updated = await Appointment.findOneAndUpdate(
+    {
+      _id: req.params.id,
+      mother: mother._id,
+      status: { $in: MOTHER_ACTIVE_STATUSES },
+    },
+    { $set: { status: "cancelled" } },
+    { new: true, runValidators: true },
+  );
+
+  if (!updated) {
+    throw new HttpError(409, "Appointment could not be cancelled because its status has changed");
+  }
+
+  try {
+    const { QueueEntry } = require("../models");
+    await QueueEntry.updateMany(
+      { appointment: updated._id, status: { $in: ["waiting", "calling"] } },
+      { $set: { status: "skipped" } },
+    );
+  } catch {
+    // Non-fatal queue cleanup
+  }
+
+  res.json(updated);
 }));
 
 router.get("/records", authorize("self:read"), ah(async (req, res) => {

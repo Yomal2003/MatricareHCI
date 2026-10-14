@@ -139,13 +139,23 @@ router.patch("/:id", authorize("queue:write"), ah(async (req, res) => {
   if (req.body.reason) entry.reason = req.body.reason;
   if (req.body.type) entry.type = req.body.type;
 
+  // If status is set to "now-serving", close previous active entries in this clinic for today
+  if (entry.status === "now-serving") {
+    await QueueEntry.updateMany(
+      { day: entry.day, _id: { $ne: entry._id }, status: { $in: ["calling", "now-serving"] } },
+      { $set: { status: "done" } }
+    );
+  }
+
   await entry.save();
 
   // If completed, automatically advance the next waiting patient to "now-serving"
   if (entry.status === "done") {
+    const division = extractDivision(req.user);
+    const clinicFilter = division ? { clinic: new RegExp(escapeRegex(division), "i") } : { clinic: entry.clinic };
     const nextWaiting = await QueueEntry.findOne({
       day: entry.day,
-      clinic: entry.clinic,
+      ...clinicFilter,
       status: "waiting",
       token: { $gt: entry.token },
     }).sort({ token: 1 });

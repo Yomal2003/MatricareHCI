@@ -213,7 +213,9 @@ export function NursingHome() {
     const key = item._id || item.id || String(item.token);
     try {
       await api(`/queue/${key}/call`, { method: "POST" });
-    } catch {}
+    } catch (err) {
+      console.warn("Queue call error:", err);
+    }
 
     setCallingPatient(item);
     setQueue((prev) =>
@@ -225,6 +227,7 @@ export function NursingHome() {
           : q
       )
     );
+    await loadQueue();
   };
 
   // Call Next Waiting Token
@@ -242,16 +245,26 @@ export function NursingHome() {
     const key = item._id || item.id || String(item.token);
     try {
       await api(`/queue/${key}`, { method: "PATCH", body: { status: newStatus } });
-    } catch {}
+    } catch (err) {
+      console.warn("Queue update error:", err);
+    }
 
-    if (newStatus === "done" && callingPatient?.token === item.token) {
-      setCallingPatient(null);
+    if (newStatus === "now-serving" || newStatus === "done") {
+      if (callingPatient?.token === item.token) {
+        setCallingPatient(null);
+      }
     }
 
     setQueue((prev) =>
-      prev.map((q) => (q.token === item.token ? { ...q, status: newStatus } : q))
+      prev.map((q) => {
+        if (q.token === item.token) return { ...q, status: newStatus };
+        if (newStatus === "now-serving" && (q.status === "now-serving" || q.status === "calling")) {
+          return { ...q, status: "done" };
+        }
+        return q;
+      })
     );
-    loadQueue();
+    await loadQueue();
   };
 
   // Start Clinical Entry for selected patient
@@ -638,17 +651,53 @@ export function NursingHome() {
                       </Pressable>
                     )}
 
-                    {isServing || isCalling ? (
-                      <Pressable
-                        onPress={() => handleStartEntry(item)}
-                        style={({ pressed }) => [nSt.actionSquareButton, pressed && { opacity: 0.8 }]}
-                      >
-                        <Ionicons name="create-outline" size={19} color="#FFFFFF" />
-                      </Pressable>
+                    {isServing ? (
+                      <>
+                        <Pressable
+                          onPress={() => handleStartEntry(item)}
+                          style={({ pressed }) => [nSt.actionSquareButton, pressed && { opacity: 0.8 }]}
+                          accessibilityLabel="Clinical Entry"
+                        >
+                          <Ionicons name="create-outline" size={19} color="#FFFFFF" />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleUpdateStatus(item, "done")}
+                          style={({ pressed }) => [
+                            nSt.actionCircleButton,
+                            { backgroundColor: "#DCFCE7", borderColor: "#86EFAC" },
+                            pressed && { opacity: 0.8 },
+                          ]}
+                          accessibilityLabel="Mark Done"
+                        >
+                          <Ionicons name="checkmark-done" size={17} color="#16A34A" />
+                        </Pressable>
+                      </>
+                    ) : isCalling ? (
+                      <>
+                        <Pressable
+                          onPress={() => handleUpdateStatus(item, "now-serving")}
+                          style={({ pressed }) => [
+                            nSt.actionCircleButton,
+                            { backgroundColor: "#FEF3C7", borderColor: "#FDE68A" },
+                            pressed && { opacity: 0.8 },
+                          ]}
+                          accessibilityLabel="Now Serving"
+                        >
+                          <Ionicons name="play" size={16} color="#D97706" />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleStartEntry(item)}
+                          style={({ pressed }) => [nSt.actionSquareButton, pressed && { opacity: 0.8 }]}
+                          accessibilityLabel="Clinical Entry"
+                        >
+                          <Ionicons name="create-outline" size={19} color="#FFFFFF" />
+                        </Pressable>
+                      </>
                     ) : isDone ? (
                       <Pressable
                         onPress={() => handleStartEntry(item)}
                         style={({ pressed }) => [nSt.actionCircleButton, pressed && { opacity: 0.8 }]}
+                        accessibilityLabel="Review Record"
                       >
                         <Ionicons name="eye-outline" size={17} color="#64748B" />
                       </Pressable>
@@ -656,6 +705,7 @@ export function NursingHome() {
                       <Pressable
                         onPress={() => handleUpdateStatus(item, "now-serving")}
                         style={({ pressed }) => [nSt.actionCircleButton, pressed && { opacity: 0.8 }]}
+                        accessibilityLabel="Serve Now"
                       >
                         <Ionicons name="play" size={16} color="#AF5819" />
                       </Pressable>
@@ -1320,12 +1370,22 @@ export function NursingEntry() {
       if (editingRecordType === "vaccine") {
         await api(`/records/immunizations/${editingRecordId}`, {
           method: "PATCH",
-          body: { lotNumber: editLot, expiryDate: editExpiry, notes: editNotes },
+          body: {
+            batch: editLot.trim() || undefined,
+            lotNumber: editLot.trim() || undefined,
+            expiryDate: editExpiry.trim() || undefined,
+            notes: editNotes,
+          },
         });
       } else if (editingRecordType === "growth") {
         await api(`/records/growth/${editingRecordId}`, {
           method: "PATCH",
-          body: { weight: Number(editWeight), height: Number(editHeight), notes: editNotes },
+          body: {
+            weight: editWeight.trim() ? Number(editWeight) : undefined,
+            height: editHeight.trim() ? Number(editHeight) : undefined,
+            length: editHeight.trim() ? Number(editHeight) : undefined,
+            notes: editNotes,
+          },
         });
       } else {
         await api(`/records/visits/${editingRecordId}`, {
@@ -1339,8 +1399,8 @@ export function NursingEntry() {
         });
       }
       setEditRecordModalOpen(false);
-      Alert.alert("Success", "Record updated successfully.");
-      loadRecentRecords();
+      Alert.alert("Success", "Record updated successfully in database.");
+      await loadRecentRecords();
     } catch {
       Alert.alert("Error", "Could not update record at this time.");
     }
@@ -2897,7 +2957,7 @@ export function NursingSearch() {
     });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!selectedRecord) return;
     if (!editName.trim()) {
       Alert.alert("Validation", "Child name cannot be empty.");
@@ -2928,8 +2988,55 @@ export function NursingSearch() {
 
     setRecords((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
     setSelectedRecord(updated);
-    setEditModalVisible(false);
-    Alert.alert("Saved", `Record for ${updated.name} has been updated.`);
+
+    try {
+      const codeOrId = selectedRecord.chNumber || selectedRecord.id;
+      const cleanWeight = parseFloat(editWeight.replace(/[^0-9.]/g, ""));
+      const cleanLength = parseFloat(editLength.replace(/[^0-9.]/g, ""));
+
+      // 1. Update child record in backend
+      await api(`/children/${encodeURIComponent(codeOrId)}`, {
+        method: "PATCH",
+        body: {
+          name: editName.trim(),
+          birthWeight: !isNaN(cleanWeight) ? cleanWeight : undefined,
+          birthLength: !isNaN(cleanLength) ? cleanLength : undefined,
+          notes: `[WAZ: ${editWaz.trim() || "Normal"}] ${editAge ? `Age: ${editAge}` : ""}`.trim(),
+          motherName: editMother.trim() || undefined,
+        },
+      });
+
+      // 2. If weight or length was updated, also append to Growth records
+      if (!isNaN(cleanWeight)) {
+        api("/records/growth", {
+          method: "POST",
+          body: {
+            childId: selectedRecord.id,
+            childCode: selectedRecord.chNumber,
+            childName: editName.trim(),
+            motherName: editMother.trim(),
+            weight: cleanWeight,
+            height: !isNaN(cleanLength) ? cleanLength : undefined,
+            notes: `WAZ: ${editWaz.trim() || "Normal"} (Updated via Nurse Edit)`,
+          },
+        }).catch(() => {});
+      }
+
+      // 3. Update mother name if motherCode exists
+      if (editMother.trim() && selectedRecord.motherCode) {
+        api(`/mothers/${encodeURIComponent(selectedRecord.motherCode)}`, {
+          method: "PATCH",
+          body: { name: editMother.trim() },
+        }).catch(() => {});
+      }
+
+      setEditModalVisible(false);
+      Alert.alert("Success", `Child record for ${updated.name} has been updated in database.`);
+      await loadLiveRecords();
+    } catch (err) {
+      setEditModalVisible(false);
+      Alert.alert("Updated (Offline)", `Record updated locally on device.`);
+    }
   };
 
   const openDeleteModal = () => {

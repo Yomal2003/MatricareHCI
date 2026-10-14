@@ -929,7 +929,7 @@ export function MotherAppointments() {
       setActionTarget(null);
       await refreshAppointments();
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Could not update the appointment.");
+      setError(updateError instanceof Error ? updateError.message : "Could not cancel the appointment.");
     } finally {
       setSaving(false);
     }
@@ -950,7 +950,9 @@ export function MotherAppointments() {
           : status === "completed" ? "#10B981"
           : status === "missed" || status === "rejected" ? "#DC2626"
           : status === "rescheduled" ? "#EA580C"
+          : status === "cancelled" ? "#94A3B8"
           : "#6366F1"; // pending
+        const isModifiable = status === "upcoming" || status === "pending" || status === "rescheduled" || status === "confirmed";
         return (
         <View key={i} style={{ flexDirection: "row", gap: 12 }}>
           <View style={{ alignItems: "center", width: 20 }}>
@@ -986,17 +988,17 @@ export function MotherAppointments() {
 
             <View style={appointmentStyles.statusRow}>
               <Chip
-                text={status === "pending" ? "Pending Review" : status === "confirmed" ? "Confirmed" : status === "rescheduled" ? "Rescheduled" : status === "rejected" ? "Rejected" : status}
-                tone={status === "completed" || status === "confirmed" ? "ok" : status === "missed" || status === "rejected" ? "danger" : status === "rescheduled" ? "warn" : "neutral"}
+                text={status === "pending" ? "Pending Review" : status === "confirmed" ? "Confirmed" : status === "rescheduled" ? "Rescheduled" : status === "rejected" ? "Rejected" : status === "cancelled" ? "Cancelled" : status}
+                tone={status === "completed" || status === "confirmed" ? "ok" : status === "missed" || status === "rejected" || status === "cancelled" ? "danger" : status === "rescheduled" ? "warn" : "neutral"}
               />
             </View>
-            {status === "upcoming" || status === "pending" || status === "rescheduled" ? (
+            {isModifiable ? (
               <View style={appointmentStyles.actionGrid}>
                 <Pressable disabled={saving} onPress={() => openEditor(appointment)} style={appointmentStyles.secondaryAction}>
                   <Ionicons name="create-outline" size={15} color="#087F98" />
                   <Text style={appointmentStyles.secondaryActionText}>Edit Request</Text>
                 </Pressable>
-                <Pressable disabled={saving} onPress={() => setActionTarget(appointment)} style={appointmentStyles.secondaryAction}>
+                <Pressable disabled={saving} onPress={() => { setError(""); setMessage(""); setActionTarget(appointment); }} style={appointmentStyles.secondaryAction}>
                   <Ionicons name="close-circle-outline" size={15} color="#65758A" />
                   <Text style={appointmentStyles.secondaryActionText}>Cancel</Text>
                 </Pressable>
