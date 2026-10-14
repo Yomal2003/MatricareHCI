@@ -36,6 +36,7 @@ export interface AppContextType {
   showLanguageModal: boolean;
   navigate: (screen: Screen) => void;
   login: (role: Role) => void;
+  staffLogin: (staffId: string, password: string) => Promise<void>;
   logout: () => void;
   setLanguage: (lang: Language) => void;
   setWireframeMode: (v: boolean) => void;

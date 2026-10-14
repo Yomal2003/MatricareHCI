@@ -12,9 +12,31 @@ router.get("/midwives", authorize("midwives:read"), ah(async (req, res) => {
     const areaRegex = new RegExp(area.trim(), "i");
     filter.$or = [{ area: areaRegex }, { locations: { $in: [areaRegex] } }];
   }
-  const midwives = await User.find(filter)
+  let midwives = await User.find(filter)
     .select("name staffId phone badge area locations qualifications clinic experienceYears")
-    .sort({ name: 1 });
+    .sort({ name: 1 })
+    .lean();
+
+  const { Staff } = require("../models/Staff");
+  const staffPhms = await Staff.find({ role: "PHM", status: "active" }).lean();
+  for (const sp of staffPhms) {
+    if (!midwives.some((m) => m.staffId === sp.username || m.name === sp.fullName)) {
+      midwives.push({
+        _id: sp._id,
+        id: sp._id,
+        name: sp.fullName,
+        staffId: sp.username,
+        phone: sp.phone,
+        badge: `PHM · ${sp.zone || "Division"}`,
+        area: sp.zone || "Buttala",
+        locations: [sp.zone || "Buttala"],
+        qualifications: "Registered Public Health Midwife (SLMC)",
+        clinic: `${sp.zone || "MOH"} Clinic`,
+        experienceYears: 5,
+      });
+    }
+  }
+
   res.json(midwives);
 }));
 

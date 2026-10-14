@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { Mother, Child, Appointment, Immunization, Visit, Alert } = require("../models");
+const { Mother, Child, Appointment, Immunization, Growth, Visit, Alert } = require("../models");
 const { authorize } = require("../middleware/auth");
 const { ah, HttpError } = require("../utils/http");
 
@@ -17,7 +17,7 @@ function periodRange(period) {
 
 router.get("/summary", authorize("reports:read"), ah(async (_req, res) => {
   const [done, missed, children, immunizedChildren, highRisk, records, openAlerts] = await Promise.all([
-    Appointment.countDocuments({ status: "done" }),
+    Appointment.countDocuments({ status: { $in: ["done", "completed"] } }),
     Appointment.countDocuments({ status: "missed" }),
     Child.countDocuments(),
     Immunization.distinct("child", { child: { $ne: null } }),
@@ -30,7 +30,7 @@ router.get("/summary", authorize("reports:read"), ah(async (_req, res) => {
 
 router.get("/compliance-by-area", authorize("reports:read"), ah(async (_req, res) => {
   const rows = await Appointment.aggregate([
-    { $match: { status: { $in: ["done", "missed"] } } },
+    { $match: { status: { $in: ["completed", "done", "missed"] } } },
     { $group: { _id: "$phmArea", done: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } }, total: { $sum: 1 } } },
     { $sort: { _id: 1 } },
   ]);
@@ -64,6 +64,79 @@ router.get("/generate", authorize("reports:read"), ah(async (req, res) => {
   res.json({
     reportType: type, period: { from, to }, generatedAt: new Date(),
     data: { newRegistrations, ancVisits, homeVisits, missed, highRisk, immunizations: Object.fromEntries(immunizations.map((r) => [r._id, r.count])) },
+  });
+}));
+
+// GET /reports/nursing — Clinic Summary Report for Nursing Officer
+router.get("/nursing", authorize("reports:read"), ah(async (req, res) => {
+  const [from, to] = periodRange(req.query.period);
+  const range = { $gte: from, $lt: to };
+  const clinic = req.query.clinic || req.user.area || "Buttala Clinic";
+
+  const [totalVaccines, vaccineBreakdown, totalGrowthChecks, queueServed, highRiskQueue] = await Promise.all([
+    Immunization.countDocuments({ date: range }),
+    Immunization.aggregate([{ $match: { date: range } }, { $group: { _id: "$vaccine", count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    Growth.countDocuments({ date: range }),
+    Appointment.countDocuments({ status: { $in: ["done", "completed"] }, date: range }),
+    Mother.countDocuments({ risk: "high", status: { $ne: "closed" } }),
+  ]);
+
+  res.json({
+    clinic,
+    period: { from, to },
+    generatedAt: new Date(),
+    summary: {
+      totalVaccinesAdministered: totalVaccines,
+      vaccineBreakdown: Object.fromEntries(vaccineBreakdown.map((r) => [r._id, r.count])),
+      growthAssessments: totalGrowthChecks,
+      completedClinicVisits: queueServed,
+      highRiskMothersUnderWatch: highRiskQueue,
+    },
+  });
+}));
+
+// GET /reports/phm — Division Field Report for Public Health Midwife
+router.get("/phm", authorize("reports:read"), ah(async (req, res) => {
+  const phmId = req.user.role === "phm" ? req.user._id : req.query.phmId;
+  const motherFilter = phmId ? { assignedPhm: phmId, "deleteAudit.isDeleted": { $ne: true } } : { "deleteAudit.isDeleted": { $ne: true } };
+
+  const mothers = await Mother.find(motherFilter);
+  const motherIds = mothers.map((m) => m._id);
+
+  const [from, to] = periodRange(req.query.period);
+  const range = { $gte: from, $lt: to };
+
+  const [homeVisits, upcomingAppts, missedAppts, childrenCount] = await Promise.all([
+    Visit.countDocuments({ mother: { $in: motherIds }, type: "home-visit", date: range }),
+    Appointment.countDocuments({ mother: { $in: motherIds }, status: { $in: ["completed", "done"] }, date: range }),
+    Appointment.countDocuments({ mother: { $in: motherIds }, status: "missed", date: range }),
+    Child.countDocuments({ mother: { $in: motherIds }, "deleteAudit.isDeleted": { $ne: true } }),
+  ]);
+
+  const pregnant = mothers.filter((m) => m.status === "pregnant").length;
+  const postnatal = mothers.filter((m) => m.status === "postnatal").length;
+  const highRisk = mothers.filter((m) => m.risk === "high").length;
+  const mediumRisk = mothers.filter((m) => m.risk === "medium").length;
+  const lowRisk = mothers.filter((m) => m.risk === "low").length;
+
+  res.json({
+    phmName: req.user.name,
+    area: req.user.area || "Assigned Division",
+    period: { from, to },
+    generatedAt: new Date(),
+    metrics: {
+      totalMothers: mothers.length,
+      pregnant,
+      postnatal,
+      childrenUnder5: childrenCount,
+      highRisk,
+      mediumRisk,
+      lowRisk,
+      homeVisitsConducted: homeVisits,
+      upcomingFollowups: upcomingAppts,
+      missedFollowups: missedAppts,
+      complianceRate: pct(upcomingAppts, upcomingAppts + missedAppts),
+    },
   });
 }));
 

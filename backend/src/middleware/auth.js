@@ -9,7 +9,8 @@ async function authenticate(req, _res, next) {
     const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     if (!token) {
       if (env.demoLogin) {
-        const demoUser = await User.findOne({ role: "moh", active: true });
+        const fallbackRole = (req.baseUrl === "/me" || (req.originalUrl && req.originalUrl.includes("/me"))) ? "mother" : "moh";
+        const demoUser = await User.findOne({ role: fallbackRole, active: true });
         if (demoUser) {
           req.user = demoUser;
           return next();

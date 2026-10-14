@@ -6,10 +6,15 @@ const queueSchema = new mongoose.Schema(
     clinic: { type: String, default: "Buttala Clinic" },
     token: { type: Number, required: true },
     name: { type: String, required: true },
+    childName: String,
+    motherName: String,
+    age: String,
+    type: String, // "Vaccination" | "Growth" | "Both"
     mother: { type: mongoose.Schema.Types.ObjectId, ref: "Mother" },
     child: { type: mongoose.Schema.Types.ObjectId, ref: "Child" },
+    appointment: { type: mongoose.Schema.Types.ObjectId, ref: "Appointment", index: true },
     reason: String,
-    status: { type: String, enum: ["waiting", "in-room", "done", "skipped"], default: "waiting" },
+    status: { type: String, enum: ["waiting", "in-room", "now-serving", "calling", "done", "skipped"], default: "waiting" },
   },
   { timestamps: true },
 );

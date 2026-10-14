@@ -24,15 +24,45 @@ export function MotherHome() {
   const { language, navigate, user, setShowLanguageModal, toggleOnline, isOnline } = useApp();
   const { width: windowWidth } = useWindowDimensions();
   const t = T[language];
-  const [next, setNext] = useState({ date: "2026-10-14", time: "9:00 AM", place: "Buttala Community Health Centre", type: "ANC Clinic Visit" });
+  const [summaryData, setSummaryData] = useState<any>(null);
+  const [next, setNext] = useState<any>(null);
+  const [liveQueue, setLiveQueue] = useState<any>(null);
+  const [dismissedToken, setDismissedToken] = useState<number | null>(null);
+
+  const fetchQueue = useCallback(async () => {
+    try {
+      const q = await api<any>("/me/queue");
+      if (q) setLiveQueue(q);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     api("/me/summary")
-      .then((r) => r.nextAppt && setNext((current) => ({ ...current, ...r.nextAppt })))
+      .then((r: any) => {
+        if (r) {
+          setSummaryData(r);
+          setNext(r.nextAppt || null);
+          if (r.queue) setLiveQueue(r.queue);
+        }
+      })
       .catch(() => {});
-  }, []);
-  const weeks = 32;
+
+    fetchQueue();
+    const interval = setInterval(fetchQueue, 3000);
+    return () => clearInterval(interval);
+  }, [fetchQueue]);
+
+  const motherObj = summaryData?.mother;
+  const isPostnatal = motherObj?.status === "postnatal";
+  const weeks = summaryData?.weeks ?? (motherObj?.weeks || (isPostnatal ? 0 : 28));
+  const eddDate = motherObj?.edd ? new Date(motherObj.edd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : (isPostnatal ? "Delivered" : "Not recorded");
+  const bloodGroup = motherObj?.bloodGroup && motherObj.bloodGroup !== "Not tested" && motherObj.bloodGroup !== "Unknown" ? motherObj.bloodGroup : "Not tested";
+  const gravida = motherObj?.gravida ? `G${motherObj.gravida} P1` : "G1";
+  const hbValue = motherObj?.vitals?.hb ? `${motherObj.vitals.hb} g/dL` : "—";
+  const areaName = motherObj?.phmArea || motherObj?.village || "Buttala · Monaragala";
+
   const healthTipCardWidth = Math.min(170, Math.max(128, (windowWidth - 56) / 2.15));
-  const firstName = user?.name?.trim().split(/\s+/)[0] || "there";
+  const firstName = motherObj?.name?.trim().split(/\s+/)[0] || user?.name?.trim().split(/\s+/)[0] || "Mother";
   const firstLetter = firstName.charAt(0).toUpperCase();
 
   return (
@@ -46,7 +76,7 @@ export function MotherHome() {
               <Text style={motherStyles.avatarText}>{firstLetter}</Text>
             </View>
             <View style={motherStyles.greeting}>
-              <Text style={motherStyles.greetingLabel}>GOOD EVENING</Text>
+              <Text style={motherStyles.greetingLabel}>GOOD DAY</Text>
               <Text numberOfLines={1} style={motherStyles.greetingName}>{firstName}</Text>
             </View>
             <Pressable
@@ -74,9 +104,9 @@ export function MotherHome() {
           <View style={motherStyles.headerPills}>
             <View style={motherStyles.locationPill}>
               <Ionicons name="location" size={12} color="#FF6481" />
-              <Text style={motherStyles.pillText}>Buttala · Monaragala</Text>
+              <Text style={motherStyles.pillText}>{areaName}</Text>
             </View>
-            <View style={motherStyles.rolePill}><Text style={motherStyles.pillText}>PATIENT</Text></View>
+            <View style={motherStyles.rolePill}><Text style={motherStyles.pillText}>PATIENT ({motherObj?.code || "M-1043"})</Text></View>
           </View>
         </View>
       }
@@ -95,7 +125,7 @@ export function MotherHome() {
                 fill="none"
                 strokeLinecap="round"
                 strokeDasharray={`${2 * Math.PI * 30}`}
-                strokeDashoffset={`${2 * Math.PI * 30 * (1 - weeks / 40)}`}
+                strokeDashoffset={`${2 * Math.PI * 30 * (1 - Math.min(40, weeks) / 40)}`}
                 rotation={-90}
                 origin="34, 34"
               />
@@ -107,21 +137,25 @@ export function MotherHome() {
           </View>
           <View style={motherStyles.pregnancyDetails}>
             <View style={motherStyles.pregnancyBadge}>
-              <Text style={motherStyles.pregnancyBadgeText}>🤰 Pregnancy</Text>
+              <Text style={motherStyles.pregnancyBadgeText}>{isPostnatal ? "👶 Postnatal" : "🤰 Pregnancy"}</Text>
             </View>
-            <Text style={motherStyles.pregnancyTitle}>{weeks} Weeks Pregnant</Text>
-            <Text style={motherStyles.edd}>EDD: Nov 25, 2024</Text>
+            <Text style={motherStyles.pregnancyTitle}>{weeks} Weeks {isPostnatal ? "Postnatal Care" : "Pregnant"}</Text>
+            <Text style={motherStyles.edd}>EDD: {eddDate}</Text>
             <View style={motherStyles.progressLabels}>
               <Text style={motherStyles.progressCaption}>Progress</Text>
               <Text style={motherStyles.progressCaption}>{weeks}/40 wks</Text>
             </View>
             <View style={motherStyles.progressTrack}>
-              <View style={[motherStyles.progressFill, { width: `${(weeks / 40) * 100}%` }]} />
+              <View style={[motherStyles.progressFill, { width: `${Math.min(100, (weeks / 40) * 100)}%` }]} />
             </View>
           </View>
         </View>
         <View style={motherStyles.stats}>
-          {[["A+", "Blood Group"], ["G2 PI", "G/P"], ["11.4 g/dL", "Hb"]].map(([value, label]) => (
+          {[
+            [bloodGroup, "Blood Group"],
+            [gravida, "G/P"],
+            [hbValue, "Hb"],
+          ].map(([value, label]) => (
             <View key={label} style={motherStyles.stat}>
               <Text style={motherStyles.statValue}>{value}</Text>
               <Text style={motherStyles.statLabel}>{label}</Text>
@@ -130,43 +164,168 @@ export function MotherHome() {
         </View>
       </Card>
 
+      {/* LIVE CLINIC QUEUE STATUS CARD */}
+      <View style={motherStyles.sectionHeading}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View style={[motherStyles.liveDot, (liveQueue?.isBeingCalled || liveQueue?.currentlyCalling) ? motherStyles.liveDotActive : null]} />
+          <Text style={motherStyles.sectionTitle}>LIVE CLINIC QUEUE</Text>
+        </View>
+        <Pressable onPress={fetchQueue} hitSlop={8}>
+          <Text style={motherStyles.seeAll}>Live Sync 🔄</Text>
+        </Pressable>
+      </View>
+
+      {liveQueue?.isBeingCalled ? (
+        <Card style={motherStyles.activeCallingCard}>
+          <View style={motherStyles.activeCallingContent}>
+            <View style={motherStyles.activeCallingPulse}>
+              <Ionicons name="notifications" size={24} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={motherStyles.activeCallingBadge}>CALLING NOW</Text>
+                <Text style={motherStyles.activeCallingToken}>Token #{liveQueue.myToken?.token}</Text>
+              </View>
+              <Text style={motherStyles.activeCallingTitle}>The Nurse is Calling You Inside!</Text>
+              <Text style={motherStyles.activeCallingSub}>
+                {liveQueue.myToken?.clinic || "Clinic Station"} · {liveQueue.myToken?.name || firstName}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setDismissedToken(liveQueue.myToken?.token)}
+              style={({ pressed }) => [motherStyles.acknowledgedBtn, pressed && { opacity: 0.8 }]}
+            >
+              <Text style={motherStyles.acknowledgedBtnText}>Enter</Text>
+            </Pressable>
+          </View>
+        </Card>
+      ) : liveQueue?.hasToken ? (
+        <Card style={motherStyles.queueCard}>
+          <View style={motherStyles.queueContent}>
+            <View style={motherStyles.queueTokenCircle}>
+              <Text style={motherStyles.queueTokenLabel}>YOUR TOKEN</Text>
+              <Text style={motherStyles.queueTokenValue}>#{liveQueue.myToken?.token}</Text>
+            </View>
+            <View style={motherStyles.queueDetails}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                <Text style={motherStyles.queuePatient}>{liveQueue.myToken?.name || "Patient"}</Text>
+                <View style={[
+                  motherStyles.queueStatusBadge,
+                  liveQueue.myToken?.status === "now-serving" ? { backgroundColor: "#DCFCE7" } :
+                  liveQueue.myToken?.status === "done" ? { backgroundColor: "#E0F2FE" } : { backgroundColor: "#FEF3C7" }
+                ]}>
+                  <Text style={[
+                    motherStyles.queueStatusText,
+                    liveQueue.myToken?.status === "now-serving" ? { color: "#16A34A" } :
+                    liveQueue.myToken?.status === "done" ? { color: "#0284C7" } : { color: "#D97706" }
+                  ]}>
+                    {liveQueue.myToken?.status === "now-serving" ? "IN ROOM 🩺" :
+                     liveQueue.myToken?.status === "done" ? "COMPLETED ✓" : "WAITING ⏳"}
+                  </Text>
+                </View>
+              </View>
+              <Text style={motherStyles.queueSubText}>
+                {liveQueue.myToken?.status === "waiting"
+                  ? (liveQueue.waitingAhead > 0 ? `${liveQueue.waitingAhead} patient${liveQueue.waitingAhead > 1 ? "s" : ""} ahead of you` : "You are next in line!")
+                  : liveQueue.myToken?.status === "now-serving"
+                  ? "Currently inside consultation room"
+                  : "Visit completed for today"}
+              </Text>
+              {liveQueue.currentlyCalling && (
+                <View style={motherStyles.queueClinicCallBar}>
+                  <Ionicons name="volume-medium-outline" size={13} color="#079DB8" />
+                  <Text style={motherStyles.queueClinicCallText}>
+                    Clinic Serving: <Text style={{ fontWeight: "800" }}>Token #{liveQueue.currentlyCalling.token}</Text> ({liveQueue.currentlyCalling.name})
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Card>
+      ) : liveQueue?.currentlyCalling ? (
+        <Card style={motherStyles.queueCard}>
+          <View style={motherStyles.queueClinicActiveRow}>
+            <View style={motherStyles.queueActiveIconBox}>
+              <Ionicons name="business-outline" size={20} color="#079DB8" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={motherStyles.queueClinicHeading}>Clinic Live Session</Text>
+              <Text style={motherStyles.queueClinicServing}>
+                Now Calling: <Text style={{ fontWeight: "800", color: "#E11D48" }}>Token #{liveQueue.currentlyCalling.token}</Text> · {liveQueue.currentlyCalling.name}
+              </Text>
+              <Text style={motherStyles.queueClinicLoc}>{liveQueue.currentlyCalling.clinic || areaName}</Text>
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
       <View style={motherStyles.sectionHeading}>
         <Text style={motherStyles.sectionTitle}>NEXT APPOINTMENT</Text>
         <Pressable onPress={() => navigate("mother-appointments")} hitSlop={8}>
           <Text style={motherStyles.seeAll}>See all</Text>
         </Pressable>
       </View>
-      <Card style={motherStyles.appointmentCard}>
-        <View style={motherStyles.appointmentAccent} />
-        <View style={motherStyles.appointmentContent}>
-          <View style={motherStyles.appointmentHeading}>
-            <View style={motherStyles.appointmentText}>
-              <Text style={motherStyles.appointmentTitle}>{next.type}</Text>
+      {next ? (
+        <Card style={motherStyles.appointmentCard}>
+          <View style={motherStyles.appointmentAccent} />
+          <View style={motherStyles.appointmentContent}>
+            <View style={motherStyles.appointmentHeading}>
+              <View style={motherStyles.appointmentText}>
+                <Text style={motherStyles.appointmentTitle}>{next.type || "Clinic Visit"}</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                {next.status && (
+                  <View style={[motherStyles.apptStatusPill, { backgroundColor: next.status === "confirmed" ? "#DCFCE7" : next.status === "rescheduled" ? "#FFEDD5" : "#EEF2FF" }]}>
+                    <Text style={{ fontSize: 9.5, fontWeight: "800", color: next.status === "confirmed" ? "#16A34A" : next.status === "rescheduled" ? "#C2410C" : "#4F46E5" }}>
+                      {next.status === "confirmed" ? "CONFIRMED" : next.status === "rescheduled" ? "RESCHEDULED" : "PENDING"}
+                    </Text>
+                  </View>
+                )}
+                <View style={motherStyles.calendarIcon}>
+                  <Ionicons name="calendar-outline" size={19} color="#079DB8" />
+                </View>
+              </View>
             </View>
-            <View style={motherStyles.calendarIcon}>
-              <Ionicons name="calendar-outline" size={19} color="#079DB8" />
+            <View style={motherStyles.appointmentDetail}>
+              <Ionicons name="calendar" size={13} color="#8793B4" />
+              <Text style={motherStyles.appointmentSub}>{formatAppointmentDate(next.date)}</Text>
             </View>
+            <View style={motherStyles.appointmentDetail}>
+              <Ionicons name="time-outline" size={13} color="#8793B4" />
+              <Text style={motherStyles.appointmentSub}>{next.time || "Scheduled Time"}</Text>
+            </View>
+            <View style={motherStyles.appointmentDetail}>
+              <Ionicons name="location" size={13} color="#FF6481" />
+              <Text style={motherStyles.appointmentSub}>{next.place || "MOH Clinic"}</Text>
+            </View>
+            <Pressable
+              onPress={() => navigate("mother-appointments")}
+              style={({ pressed }) => [motherStyles.reminderButton, pressed && motherStyles.pressed]}
+            >
+              <Text style={motherStyles.reminderButtonText}>Manage Appointments</Text>
+            </Pressable>
           </View>
-          <View style={motherStyles.appointmentDetail}>
-            <Ionicons name="calendar" size={13} color="#8793B4" />
-            <Text style={motherStyles.appointmentSub}>{formatAppointmentDate(next.date)}</Text>
+        </Card>
+      ) : (
+        <Card style={motherStyles.noApptCard}>
+          <View style={motherStyles.noApptContent}>
+            <View style={motherStyles.noApptIconBox}>
+              <Ionicons name="calendar-outline" size={24} color="#079DB8" />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8, paddingLeft: 10 }}>
+              <Text style={motherStyles.noApptTitle}>No Upcoming Appointments</Text>
+              <Text style={motherStyles.noApptSubtitle}>You have no visits scheduled right now. Request an appointment anytime.</Text>
+            </View>
+            <Pressable
+              onPress={() => navigate("mother-appointments")}
+              style={({ pressed }) => [motherStyles.requestApptBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Ionicons name="add" size={16} color="#FFFFFF" />
+              <Text style={motherStyles.requestApptBtnText}>Request</Text>
+            </Pressable>
           </View>
-          <View style={motherStyles.appointmentDetail}>
-            <Ionicons name="time-outline" size={13} color="#8793B4" />
-            <Text style={motherStyles.appointmentSub}>{next.time}</Text>
-          </View>
-          <View style={motherStyles.appointmentDetail}>
-            <Ionicons name="location" size={13} color="#FF6481" />
-            <Text style={motherStyles.appointmentSub}>{next.place}</Text>
-          </View>
-          <Pressable
-            onPress={() => navigate("mother-appointments")}
-            style={({ pressed }) => [motherStyles.reminderButton, pressed && motherStyles.pressed]}
-          >
-            <Text style={motherStyles.reminderButtonText}>Manage Reminders</Text>
-          </Pressable>
-        </View>
-      </Card>
+        </Card>
+      )}
 
       <Text style={[motherStyles.sectionTitle, motherStyles.quickAccessTitle]}>QUICK ACCESS</Text>
       <View style={motherStyles.quickGrid}>
@@ -192,6 +351,55 @@ export function MotherHome() {
           </Card>
         ))}
       </ScrollView>
+
+      {/* URGENT LIVE CLINIC CALL MODAL */}
+      <Modal
+        visible={Boolean(liveQueue?.isBeingCalled && dismissedToken !== liveQueue?.myToken?.token)}
+        transparent
+        animationType="fade"
+      >
+        <View style={motherStyles.callModalBackdrop}>
+          <View style={motherStyles.callModalCard}>
+            <View style={motherStyles.callModalHeader}>
+              <View style={motherStyles.callModalIconBox}>
+                <Ionicons name="megaphone" size={28} color="#FFFFFF" />
+              </View>
+              <Text style={motherStyles.callModalTitle}>YOUR TOKEN IS BEING CALLED!</Text>
+              <Text style={motherStyles.callModalSubtitle}>Please proceed to the Clinic Room immediately</Text>
+            </View>
+
+            <View style={motherStyles.callTokenBox}>
+              <Text style={motherStyles.callTokenLabel}>TOKEN NUMBER</Text>
+              <Text style={motherStyles.callTokenNumber}>#{liveQueue?.myToken?.token}</Text>
+              <Text style={motherStyles.callPatientName}>
+                {liveQueue?.myToken?.name || liveQueue?.myToken?.motherName || firstName}
+              </Text>
+              <View style={motherStyles.callLocationBadge}>
+                <Ionicons name="location" size={13} color="#E11D48" />
+                <Text style={motherStyles.callLocationText}>
+                  {liveQueue?.myToken?.clinic || "Buttala MOH Clinic"} · Room 1
+                </Text>
+              </View>
+            </View>
+
+            <View style={motherStyles.callModalActions}>
+              <Pressable
+                onPress={() => setDismissedToken(liveQueue?.myToken?.token)}
+                style={({ pressed }) => [motherStyles.callEnterBtn, pressed && { opacity: 0.85 }]}
+              >
+                <Ionicons name="walk" size={18} color="#FFFFFF" />
+                <Text style={motherStyles.callEnterBtnText}>I'm Entering the Room</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setDismissedToken(liveQueue?.myToken?.token)}
+                style={({ pressed }) => [motherStyles.callDismissBtn, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={motherStyles.callDismissBtnText}>Dismiss</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Shell>
   );
 }
@@ -242,6 +450,207 @@ function formatAppointmentDate(value: string) {
 }
 
 const motherStyles = StyleSheet.create({
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#94A3B8" },
+  liveDotActive: { backgroundColor: "#10B981" },
+  activeCallingCard: {
+    borderRadius: 16,
+    padding: 13,
+    marginBottom: 14,
+    backgroundColor: "#FFF1F2",
+    borderColor: "#FECDD3",
+    borderWidth: 1.5,
+  },
+  activeCallingContent: { flexDirection: "row", alignItems: "center", gap: 12 },
+  activeCallingPulse: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#E11D48",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activeCallingBadge: {
+    backgroundColor: "#FFE4E6",
+    color: "#E11D48",
+    fontSize: 9,
+    fontWeight: "800",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  activeCallingToken: { color: "#E11D48", fontSize: 13, fontWeight: "900" },
+  activeCallingTitle: { color: "#9F1239", fontSize: 13, fontWeight: "800", marginTop: 2 },
+  activeCallingSub: { color: "#BE123C", fontSize: 10, marginTop: 1 },
+  acknowledgedBtn: {
+    backgroundColor: "#E11D48",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  acknowledgedBtnText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+  queueCard: { borderRadius: 16, padding: 13, marginBottom: 14, backgroundColor: "#FFFFFF" },
+  queueContent: { flexDirection: "row", alignItems: "center", gap: 13 },
+  queueTokenCircle: {
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    backgroundColor: "#E6F7FA",
+    borderWidth: 1.5,
+    borderColor: "#BFEBF4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueTokenLabel: { color: "#078EA9", fontSize: 7, fontWeight: "800", letterSpacing: 0.5 },
+  queueTokenValue: { color: "#057A91", fontSize: 18, fontWeight: "900", marginTop: 1 },
+  queueDetails: { flex: 1 },
+  queuePatient: { color: "#152B38", fontSize: 13, fontWeight: "800" },
+  queueStatusBadge: { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2.5 },
+  queueStatusText: { fontSize: 8.5, fontWeight: "800" },
+  queueSubText: { color: "#647895", fontSize: 10.5, marginTop: 2 },
+  queueClinicCallBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#F0F9FB",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  queueClinicCallText: { color: "#086F84", fontSize: 9.5 },
+  queueClinicActiveRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  queueActiveIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#E6F7FA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueClinicHeading: { color: "#8793B4", fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  queueClinicServing: { color: "#152B38", fontSize: 12.5, marginTop: 2 },
+  queueClinicLoc: { color: "#647895", fontSize: 10, marginTop: 1 },
+  callModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 22,
+  },
+  callModalCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 22,
+    alignItems: "center",
+    shadowColor: "#E11D48",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  callModalHeader: { alignItems: "center", marginBottom: 16 },
+  callModalIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#E11D48",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  callModalTitle: {
+    color: "#E11D48",
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    textAlign: "center",
+  },
+  callModalSubtitle: {
+    color: "#64748B",
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  callTokenBox: {
+    width: "100%",
+    backgroundColor: "#FFF1F2",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "#FECDD3",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  callTokenLabel: {
+    color: "#BE123C",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  callTokenNumber: {
+    color: "#E11D48",
+    fontSize: 42,
+    fontWeight: "900",
+    lineHeight: 48,
+    marginVertical: 4,
+  },
+  callPatientName: {
+    color: "#1E293B",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  callLocationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 6,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  callLocationText: {
+    color: "#E11D48",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  callModalActions: {
+    width: "100%",
+    gap: 9,
+  },
+  callEnterBtn: {
+    width: "100%",
+    backgroundColor: "#E11D48",
+    borderRadius: 14,
+    paddingVertical: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+  },
+  callEnterBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  callDismissBtn: {
+    width: "100%",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 14,
+    paddingVertical: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  callDismissBtnText: {
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   dashboardHeader: { paddingHorizontal: 14, paddingTop: 8, paddingBottom: 12 },
   headerTop: { flexDirection: "row", alignItems: "center", gap: 7 },
   avatar: {
@@ -324,9 +733,17 @@ const motherStyles = StyleSheet.create({
   healthTipCard: { minHeight: 130, borderRadius: 15, padding: 13, marginBottom: 0, justifyContent: "space-between" },
   healthTipIcon: { fontSize: 24, lineHeight: 30 },
   healthTipText: { color: "#172E3B", fontSize: 12, fontWeight: "600", lineHeight: 17 },
+  noApptCard: { borderRadius: 16, padding: 14, marginBottom: 15, backgroundColor: "#FFFFFF" },
+  noApptContent: { flexDirection: "row", alignItems: "center" },
+  noApptIconBox: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#E6F7FA" },
+  noApptTitle: { color: "#152B38", fontSize: 13, fontWeight: "800" },
+  noApptSubtitle: { color: "#8793B4", fontSize: 10.5, marginTop: 2, lineHeight: 14 },
+  requestApptBtn: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#079DB8", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  requestApptBtnText: { color: "#FFFFFF", fontSize: 11.5, fontWeight: "800" },
+  apptStatusPill: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
 });
 
-type AppointmentStatus = "upcoming" | "completed" | "done" | "missed" | "cancelled";
+type AppointmentStatus = "pending" | "confirmed" | "upcoming" | "rescheduled" | "rejected" | "completed" | "done" | "missed" | "cancelled";
 type MotherAppointmentRecord = {
   _id: string;
   type: string;
@@ -334,7 +751,10 @@ type MotherAppointmentRecord = {
   place?: string;
   notes?: string;
   category?: string;
+  targetRole?: "nursing" | "phm";
   status: AppointmentStatus;
+  rejectionReason?: string;
+  rescheduledNotes?: string;
 };
 export function MotherAppointments() {
   const { language } = useApp();
@@ -349,6 +769,7 @@ export function MotherAppointments() {
   const [formType, setFormType] = useState("");
   const [formDate, setFormDate] = useState("");
   const [formTime, setFormTime] = useState("");
+  const [formTargetRole, setFormTargetRole] = useState<"phm" | "nursing">("phm");
   const [formPlace, setFormPlace] = useState("");
   const [formNotes, setFormNotes] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -394,6 +815,7 @@ export function MotherAppointments() {
   const openEditor = (appointment?: MotherAppointmentRecord) => {
     setEditing(appointment ?? null);
     setFormType(appointment?.type ?? "");
+    setFormTargetRole(appointment?.targetRole ?? (appointment?.place?.toLowerCase().includes("clinic") ? "nursing" : "phm"));
     setFormDate(appointment ? appointmentInputDate(appointment.date) : "");
     setFormTime(appointment ? appointmentInputTime(appointment.date) : "");
     setFormPlace(appointment?.place ?? "");
@@ -473,13 +895,19 @@ export function MotherAppointments() {
     setError("");
     setMessage("");
     try {
-      const body = { type: formType.trim(), date: date.toISOString(), place: formPlace.trim(), notes: formNotes.trim() };
+      const body = {
+        type: formType.trim(),
+        date: date.toISOString(),
+        targetRole: formTargetRole,
+        place: formPlace.trim() || (formTargetRole === "nursing" ? "Buttala MOH Clinic" : "Home / Divisional Visit"),
+        notes: formNotes.trim(),
+      };
       if (editing) {
         await api(`/me/appointments/${encodeURIComponent(editing._id)}`, { method: "PATCH", body });
-        setMessage("Appointment updated.");
+        setMessage("Appointment request updated.");
       } else {
         await api("/me/appointments", { method: "POST", body });
-        setMessage("Appointment created.");
+        setMessage("Appointment request sent for review.");
       }
       setEditorOpen(false);
       await refreshAppointments();
@@ -511,16 +939,18 @@ export function MotherAppointments() {
     <Shell title={T[language].nextAppt}>
       <View style={appointmentStyles.titleRow}>
         <SectionTitle>Visit timeline</SectionTitle>
-        <Button title="Add" icon="add" onPress={() => !saving && openEditor()} style={appointmentStyles.addButton} />
+        <Button title="Request" icon="add" onPress={() => !saving && openEditor()} style={appointmentStyles.addButton} />
       </View>
       {loading ? <Card><Text style={s.muted}>Loading appointments…</Text></Card> : null}
-      {!loading && !appointments.length && !error ? <Card><Text style={s.muted}>No appointments yet. Add an appointment to get started.</Text></Card> : null}
+      {!loading && !appointments.length && !error ? <Card><Text style={s.muted}>No appointments yet. Request an appointment to get started.</Text></Card> : null}
       {appointments.map((appointment, i) => {
-        const status = appointment.status === "done" ? "completed" : appointment.status;
-        const dotColor = status === "upcoming" ? p.color
+        const rawStatus = appointment.status;
+        const status = rawStatus === "done" ? "completed" : rawStatus;
+        const dotColor = status === "confirmed" || status === "upcoming" ? p.color
           : status === "completed" ? "#10B981"
-          : status === "missed" ? "#DC2626"
-          : "#98A2B3";
+          : status === "missed" || status === "rejected" ? "#DC2626"
+          : status === "rescheduled" ? "#EA580C"
+          : "#6366F1"; // pending
         return (
         <View key={i} style={{ flexDirection: "row", gap: 12 }}>
           <View style={{ alignItems: "center", width: 20 }}>
@@ -528,21 +958,43 @@ export function MotherAppointments() {
             {i < appointments.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: "#D7E3E1" }} />}
           </View>
           <Card style={{ flex: 1 }} label={i === 0 ? "TIMELINE ITEM" : undefined}>
-            <Text style={[s.muted, { fontWeight: "700" }]}>{formatAppointmentDateTime(appointment.date)}</Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={[s.muted, { fontWeight: "700" }]}>{formatAppointmentDateTime(appointment.date)}</Text>
+              <View style={{ backgroundColor: appointment.targetRole === "nursing" ? "#FEF3C7" : "#EDE9FE", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
+                <Text style={{ fontSize: 10, fontWeight: "800", color: appointment.targetRole === "nursing" ? "#B45309" : "#6D28D9" }}>
+                  {appointment.targetRole === "nursing" ? "🏥 Clinic Nurse" : "🩺 PHM Midwife"}
+                </Text>
+              </View>
+            </View>
             <Text style={s.rowTitle}>{appointment.type}</Text>
             {appointment.place ? <Text style={s.rowSub}>{appointment.place}</Text> : null}
             {appointment.notes ? <Text style={[s.muted, { marginTop: 5 }]}>{appointment.notes}</Text> : null}
+
+            {appointment.rescheduledNotes ? (
+              <View style={{ backgroundColor: "#FFF7ED", borderWidth: 1, borderColor: "#FFEDD5", borderRadius: 8, padding: 8, marginTop: 6 }}>
+                <Text style={{ fontSize: 11, color: "#C2410C", fontWeight: "700" }}>⚠️ New Time Proposd by Staff:</Text>
+                <Text style={{ fontSize: 11, color: "#9A3412", marginTop: 2 }}>{appointment.rescheduledNotes}</Text>
+              </View>
+            ) : null}
+
+            {appointment.rejectionReason ? (
+              <View style={{ backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FEE2E2", borderRadius: 8, padding: 8, marginTop: 6 }}>
+                <Text style={{ fontSize: 11, color: "#DC2626", fontWeight: "700" }}>✕ Appointment Rejected:</Text>
+                <Text style={{ fontSize: 11, color: "#B91C1C", marginTop: 2 }}>{appointment.rejectionReason}</Text>
+              </View>
+            ) : null}
+
             <View style={appointmentStyles.statusRow}>
               <Chip
-                text={status}
-                tone={status === "completed" ? "ok" : status === "missed" ? "danger" : status === "upcoming" ? "ok" : "neutral"}
+                text={status === "pending" ? "Pending Review" : status === "confirmed" ? "Confirmed" : status === "rescheduled" ? "Rescheduled" : status === "rejected" ? "Rejected" : status}
+                tone={status === "completed" || status === "confirmed" ? "ok" : status === "missed" || status === "rejected" ? "danger" : status === "rescheduled" ? "warn" : "neutral"}
               />
             </View>
-            {status === "upcoming" ? (
+            {status === "upcoming" || status === "pending" || status === "rescheduled" ? (
               <View style={appointmentStyles.actionGrid}>
                 <Pressable disabled={saving} onPress={() => openEditor(appointment)} style={appointmentStyles.secondaryAction}>
                   <Ionicons name="create-outline" size={15} color="#087F98" />
-                  <Text style={appointmentStyles.secondaryActionText}>Edit</Text>
+                  <Text style={appointmentStyles.secondaryActionText}>Edit Request</Text>
                 </Pressable>
                 <Pressable disabled={saving} onPress={() => setActionTarget(appointment)} style={appointmentStyles.secondaryAction}>
                   <Ionicons name="close-circle-outline" size={15} color="#65758A" />
@@ -570,7 +1022,7 @@ export function MotherAppointments() {
                 {actionTarget.place ? <Text style={appointmentStyles.modalText}>{actionTarget.place}</Text> : null}
               </>
             ) : null}
-            {actionTarget ? <Text style={appointmentStyles.modalText}>Are you sure you want to cancel this appointment?</Text> : null}
+            {actionTarget ? <Text style={appointmentStyles.modalText}>Are you sure you want to cancel this appointment request?</Text> : null}
             {error ? <Text style={appointmentStyles.errorText}>{error}</Text> : null}
             <View style={appointmentStyles.modalActions}>
               <Pressable disabled={saving} onPress={() => setActionTarget(null)} style={appointmentStyles.keepButton}>
@@ -590,10 +1042,55 @@ export function MotherAppointments() {
         <View style={appointmentStyles.modalBackdrop}>
           <View style={appointmentStyles.editorModal}>
             <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={appointmentStyles.modalTitle}>{editing ? "Edit Appointment" : "Add Appointment"}</Text>
-              <Text style={appointmentStyles.fieldLabel}>Appointment type</Text>
-              <TextInput value={formType} onChangeText={setFormType} placeholder="ANC Clinic Visit" style={appointmentStyles.input} />
-              <Text style={appointmentStyles.fieldLabel}>Date</Text>
+              <Text style={appointmentStyles.modalTitle}>{editing ? "Edit Appointment Request" : "Request Appointment"}</Text>
+
+              {/* TARGET SELECTION: PHM vs NURSE */}
+              <Text style={appointmentStyles.fieldLabel}>APPOINTMENT FOR</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 4, marginBottom: 8 }}>
+                <Pressable
+                  onPress={() => {
+                    setFormTargetRole("phm");
+                    if (!formPlace || formPlace.toLowerCase().includes("clinic")) setFormPlace("PHM Home / Divisional Visit");
+                  }}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 9,
+                    borderRadius: 9,
+                    alignItems: "center",
+                    borderWidth: 1.5,
+                    borderColor: formTargetRole === "phm" ? "#7C3AED" : "#E2E8F0",
+                    backgroundColor: formTargetRole === "phm" ? "#F5F3FF" : "#F8FAFC",
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: formTargetRole === "phm" ? "#7C3AED" : "#64748B" }}>
+                    🩺 Midwife (PHM)
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setFormTargetRole("nursing");
+                    setFormPlace("Buttala MOH Clinic");
+                  }}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 9,
+                    borderRadius: 9,
+                    alignItems: "center",
+                    borderWidth: 1.5,
+                    borderColor: formTargetRole === "nursing" ? "#D97706" : "#E2E8F0",
+                    backgroundColor: formTargetRole === "nursing" ? "#FEF3C7" : "#F8FAFC",
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: formTargetRole === "nursing" ? "#D97706" : "#64748B" }}>
+                    🏥 Clinic Nurse
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Text style={appointmentStyles.fieldLabel}>Appointment purpose</Text>
+              <TextInput value={formType} onChangeText={setFormType} placeholder={formTargetRole === "nursing" ? "e.g. Vaccination / Weight Check" : "e.g. ANC Visit / Pregnancy Check"} style={appointmentStyles.input} />
+
+              <Text style={appointmentStyles.fieldLabel}>Requested Date</Text>
               <AppointmentDateTimeField
                 mode="date"
                 value={formDate}
@@ -601,7 +1098,7 @@ export function MotherAppointments() {
                 onPress={openDatePicker}
                 onWebChange={setFormDate}
               />
-              <Text style={appointmentStyles.fieldLabel}>Time</Text>
+              <Text style={appointmentStyles.fieldLabel}>Requested Time</Text>
               <AppointmentDateTimeField
                 mode="time"
                 value={formTime}
@@ -609,17 +1106,17 @@ export function MotherAppointments() {
                 onPress={openTimePicker}
                 onWebChange={setFormTime}
               />
-              <Text style={appointmentStyles.fieldLabel}>Clinic</Text>
+              <Text style={appointmentStyles.fieldLabel}>Clinic / Location</Text>
               <TextInput value={formPlace} onChangeText={setFormPlace} placeholder="Clinic or location" style={appointmentStyles.input} />
-              <Text style={appointmentStyles.fieldLabel}>Notes</Text>
-              <TextInput value={formNotes} onChangeText={setFormNotes} placeholder="Optional notes" style={[appointmentStyles.input, appointmentStyles.notesInput]} multiline />
+              <Text style={appointmentStyles.fieldLabel}>Notes for Staff</Text>
+              <TextInput value={formNotes} onChangeText={setFormNotes} placeholder="Reason or specific requests..." style={[appointmentStyles.input, appointmentStyles.notesInput]} multiline />
               {error ? <Text style={appointmentStyles.errorText}>{error}</Text> : null}
               <View style={appointmentStyles.modalActions}>
                 <Pressable disabled={saving} onPress={() => setEditorOpen(false)} style={appointmentStyles.keepButton}>
                   <Text style={appointmentStyles.keepButtonText}>Cancel</Text>
                 </Pressable>
                 <Pressable disabled={saving} onPress={() => void saveAppointment()} style={[appointmentStyles.confirmButton, saving && { opacity: 0.6 }]}>
-                  <Text style={appointmentStyles.confirmButtonText}>{saving ? "Saving…" : editing ? "Save Changes" : "Create Appointment"}</Text>
+                  <Text style={appointmentStyles.confirmButtonText}>{saving ? "Saving…" : editing ? "Save Changes" : "Send Request"}</Text>
                 </Pressable>
               </View>
             </ScrollView>
@@ -817,25 +1314,127 @@ const appointmentStyles = StyleSheet.create({
 
 export function MotherRecords() {
   const { language } = useApp();
+  const [data, setData] = useState<{
+    vitals?: { weight?: number; bp?: string; hb?: number };
+    visits?: any[];
+    immunizations?: any[];
+    growth?: any[];
+    children?: any[];
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<{ vitals?: any; visits?: any[]; immunizations?: any[]; growth?: any[]; children?: any[] }>("/me/records")
+      .then((res) => {
+        if (res) setData(res);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const weightVal = data?.vitals?.weight ? `${data.vitals.weight} kg` : "—";
+  const bpVal = data?.vitals?.bp ? data.vitals.bp : "—";
+  const hbVal = data?.vitals?.hb ? `${data.vitals.hb} g/dL` : "—";
+
+  const imms = data?.immunizations || [];
+  const visits = data?.visits || [];
+  const growths = data?.growth || [];
+
   return (
     <Shell title={T[language].myRecords}>
-      <Card label="VITALS">
+      <Card label="CLINICAL VITALS">
         <View style={{ flexDirection: "row", justifyContent: "space-around" }}>
-          {[["Weight", "62 kg"], ["BP", "110/70"], ["Hb", "11.4"]].map(([k, v]) => (
-            <View key={k} style={{ alignItems: "center" }}><Text style={s.muted}>{k}</Text><Text style={[s.h1, { fontSize: 20 }]}>{v}</Text></View>
+          {[
+            ["Weight", weightVal],
+            ["BP", bpVal],
+            ["Hb", hbVal],
+          ].map(([k, v]) => (
+            <View key={k} style={{ alignItems: "center" }}>
+              <Text style={s.muted}>{k}</Text>
+              <Text style={[s.h1, { fontSize: 20 }]}>{v}</Text>
+            </View>
           ))}
         </View>
+        {weightVal === "—" && bpVal === "—" && hbVal === "—" && (
+          <Text style={[s.muted, { textAlign: "center", fontSize: 11, marginTop: 8 }]}>
+            Vitals will be recorded during your routine clinic or PHM home visit.
+          </Text>
+        )}
       </Card>
-      <SectionTitle>Immunizations</SectionTitle>
+
+      <SectionTitle>Immunization Log ({imms.length})</SectionTitle>
       <Card label="IMMUNIZATION LIST">
-        <Row icon="shield-checkmark" title="Tetanus toxoid (TT1)" sub="Jul 02, 2026" right={<Ionicons name="checkmark-circle" size={22} color="#059669" />} />
-        <Row icon="shield-checkmark" title="Tetanus toxoid (TT2)" sub="Aug 06, 2026" right={<Ionicons name="checkmark-circle" size={22} color="#059669" />} />
-        <Row icon="shield-outline" title="Rubella check" sub="Due at next visit" right={<Chip text="Due" tone="warn" />} />
+        {imms.length === 0 ? (
+          <View style={{ paddingVertical: 18, alignItems: "center" }}>
+            <Ionicons name="shield-outline" size={28} color="#94A3B8" />
+            <Text style={[s.muted, { marginTop: 6, textAlign: "center", fontWeight: "600" }]}>
+              No immunization records logged yet.
+            </Text>
+            <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: 2, textAlign: "center" }}>
+              Vaccines administered by clinic nurses will appear here automatically.
+            </Text>
+          </View>
+        ) : (
+          imms.map((imm, idx) => {
+            const isDone = !!imm.date;
+            return (
+              <Row
+                key={imm._id || idx}
+                icon={isDone ? "shield-checkmark" : "shield-outline"}
+                title={imm.vaccine || imm.name || "Vaccine"}
+                sub={imm.date ? new Date(imm.date).toLocaleDateString() : (imm.notes || "Due")}
+                right={
+                  isDone ? (
+                    <Ionicons name="checkmark-circle" size={22} color="#059669" />
+                  ) : (
+                    <Chip text="Due" tone="warn" />
+                  )
+                }
+              />
+            );
+          })
+        )}
       </Card>
-      <SectionTitle>Lab reports</SectionTitle>
-      <Card label="LAB LIST">
-        <Row icon="flask" title="Blood sugar (OGTT)" sub="Normal · Sep 16" />
-        <Row icon="flask" title="Urine protein" sub="Negative · Sep 16" />
+
+      {growths.length > 0 && (
+        <>
+          <SectionTitle>Child Growth Records ({growths.length})</SectionTitle>
+          <Card label="GROWTH MONITORING">
+            {growths.map((g, idx) => (
+              <Row
+                key={g._id || idx}
+                icon="bar-chart"
+                title={`${g.weight} kg · ${g.height || ""} cm`}
+                sub={`Recorded: ${new Date(g.date || g.createdAt || Date.now()).toLocaleDateString()}`}
+                right={<Chip text={g.waz || "Normal"} tone="ok" />}
+              />
+            ))}
+          </Card>
+        </>
+      )}
+
+      <SectionTitle>Clinical & Field Visits ({visits.length})</SectionTitle>
+      <Card label="VISIT RECORDS">
+        {visits.length === 0 ? (
+          <View style={{ paddingVertical: 18, alignItems: "center" }}>
+            <Ionicons name="document-text-outline" size={28} color="#94A3B8" />
+            <Text style={[s.muted, { marginTop: 6, textAlign: "center", fontWeight: "600" }]}>
+              No clinical visits recorded yet.
+            </Text>
+            <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: 2, textAlign: "center" }}>
+              Routine clinic checkups and PHM home visits will be documented here.
+            </Text>
+          </View>
+        ) : (
+          visits.map((vis, idx) => (
+            <Row
+              key={vis._id || idx}
+              icon="document-text"
+              title={vis.type || "Clinic Visit"}
+              sub={`${new Date(vis.date || Date.now()).toLocaleDateString()} · ${vis.notes || "Recorded in system"}`}
+            />
+          ))
+        )}
       </Card>
     </Shell>
   );

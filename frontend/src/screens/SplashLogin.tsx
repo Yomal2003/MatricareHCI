@@ -26,12 +26,14 @@ const ROLE_ICON: Record<Role, keyof typeof Ionicons.glyphMap> = { mother: "woman
 const DEMO_ROLES: Role[] = ["mother", "phm", "nursing", "moh"];
 
 export function Login() {
-  const { language, setLanguage, login, requestPhoneOtp, verifyPhoneOtp } = useApp();
+  const { language, setLanguage, login, staffLogin, requestPhoneOtp, verifyPhoneOtp } = useApp();
   const t = T[language];
   const [mode, setMode] = useState<"mother" | "staff">("mother");
   const [otpSent, setOtpSent] = useState(false);
   const [loadingRole, setLoadingRole] = useState<Role | null>(null);
   const [phone, setPhone] = useState("");
+  const [staffId, setStaffId] = useState("");
+  const [staffPassword, setStaffPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [authError, setAuthError] = useState("");
   const [devOtp, setDevOtp] = useState("");
@@ -100,9 +102,10 @@ export function Login() {
             </>
           ) : (
             <>
-              <Field icon="id-card" placeholder={t.staffIdPlaceholder} autoCapitalize="characters" />
-              <Field icon="lock-closed" placeholder={t.passwordPlaceholder} secureTextEntry />
-              <Button title={t.signIn} onPress={() => login("phm")} style={{ backgroundColor: TEAL }} />
+              <Field icon="id-card" placeholder={t.staffIdPlaceholder} autoCapitalize="characters" value={staffId} onChangeText={setStaffId} />
+              <Field icon="lock-closed" placeholder={t.passwordPlaceholder} secureTextEntry value={staffPassword} onChangeText={setStaffPassword} />
+              {authError ? <Text accessibilityRole="alert" style={st.authError}>{authError}</Text> : null}
+              <Button title={t.signIn} onPress={() => void staffLogin(staffId, staffPassword).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not sign in."))} style={{ backgroundColor: TEAL }} />
             </>
           )}
         </View>
